@@ -1,44 +1,63 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-export default function CreateEventPage() {
+type EventDTO = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  startAt: string; // ISO
+  endAt: string;   // ISO
+  locationName: string;
+  address: string;
+};
+
+function isoToDatetimeLocal(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
+}
+
+export default function EditEventForm({ event }: { event: EventDTO }) {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const [title, setTitle] = useState(event.title);
+  const [description, setDescription] = useState(event.description);
+  const [locationName, setLocationName] = useState(event.locationName);
+  const [address, setAddress] = useState(event.address);
+
+  // avoid SSR timezone mismatch
   const [startAt, setStartAt] = useState("");
   const [endAt, setEndAt] = useState("");
-  const [locationName, setLocationName] = useState("");
-  const [address, setAddress] = useState("");
+
+  useEffect(() => {
+    setMounted(true);
+    setStartAt(isoToDatetimeLocal(event.startAt));
+    setEndAt(isoToDatetimeLocal(event.endAt));
+  }, [event.startAt, event.endAt]);
+
+  if (!mounted) return null;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-
-    // basic client validation
-    if (!startAt || !endAt) {
-      alert("Please select start and end time.");
-      return;
-    }
-    if (new Date(endAt).getTime() <= new Date(startAt).getTime()) {
-      alert("End time must be after start time.");
-      return;
-    }
-
     setLoading(true);
 
-    const res = await fetch("/api/events", {
-      method: "POST",
+    const res = await fetch(`/api/events/${event.slug}`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        title: title.trim(),
-        description: description.trim(),
-        startAt, // datetime-local string is OK; server converts to ISO
+        title,
+        description,
+        locationName,
+        address,
+        startAt,
         endAt,
-        locationName: locationName.trim(),
-        address: address.trim(),
       }),
     });
 
@@ -46,17 +65,18 @@ export default function CreateEventPage() {
 
     if (!res.ok) {
       const msg = await res.text();
-      alert("Failed to create event: " + msg);
+      alert("Failed to update event: " + msg);
       return;
     }
 
-    // Go straight to Events page
-    router.push("/events");
+    const updated = await res.json();
+    router.push(`/events/${updated.slug}`);
+    router.refresh();
   }
 
   return (
     <div>
-      <h1>Create Event</h1>
+      <h1>Edit Event</h1>
 
       <form className="card" onSubmit={onSubmit}>
         <label className="small">Title</label>
@@ -93,7 +113,7 @@ export default function CreateEventPage() {
         <input value={address} onChange={(e) => setAddress(e.target.value)} required />
 
         <button disabled={loading} style={{ marginTop: 12 }}>
-          {loading ? "Creating..." : "Create"}
+          {loading ? "Saving..." : "Save"}
         </button>
       </form>
     </div>

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { headers } from "next/headers";
+import EventDate from "./eventDate";
 
 type EventSummary = {
   id: string;
@@ -8,8 +10,20 @@ type EventSummary = {
   locationName: string;
 };
 
+export const dynamic = "force-dynamic"; // never cache this page
+
+async function getBaseUrl() {
+  const h = await headers();
+
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? "http";
+
+  if (!host) return "http://localhost:3000";
+  return `${proto}://${host}`;
+}
+
 export default async function EventsPage() {
-  const base = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const base = await getBaseUrl();
   const res = await fetch(`${base}/api/events`, { cache: "no-store" });
 
   if (!res.ok) throw new Error("Failed to load events");
@@ -24,8 +38,14 @@ export default async function EventsPage() {
       ) : (
         events.map((e) => (
           <div className="card" key={e.id}>
-            <Link href={`/events/${e.slug}`}><b>{e.title}</b></Link>
-            <div className="small">{new Date(e.startAt).toLocaleString()}</div>
+            <Link href={`/events/${e.slug}`}>
+              <b>{e.title}</b>
+            </Link>
+
+            <div className="small">
+              <EventDate iso={e.startAt} />
+            </div>
+
             <div className="small">{e.locationName}</div>
           </div>
         ))

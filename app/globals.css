@@ -22,3 +22,35 @@ button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+.eventActions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  width: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.iconBtn:hover {
+  background: rgba(255,255,255,0.07);
+  border-color: rgba(255,255,255,0.18);
+  transform: translateY(-1px);
+}
+
+.iconBtnDanger:hover {
+  border-color: rgba(255,80,80,0.5);
+  background: rgba(255,80,80,0.12);
+}

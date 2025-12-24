@@ -1,35 +1,48 @@
-type EventDetail = {
-  id: string;
-  title: string;
-  slug: string;
-  description: string;
-  startAt: string;
-  endAt: string;
-  locationName: string;
-  address: string;
-};
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import EventActions from "./EventActions"
 
-export default async function EventDetailPage({
+export const dynamic = "force-dynamic";
+
+export default async function EventDetailsPage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
-  const base = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const res = await fetch(`${base}/api/events/${params.slug}`, { cache: "no-store" });
+  const { slug } = await params;
 
-  if (res.status === 404) return <div>Event not found.</div>;
-  if (!res.ok) throw new Error("Failed to load event");
-  const e: EventDetail = await res.json();
+  const event = await prisma.event.findUnique({
+    where: { slug },
+  });
+
+  if (!event) notFound();
 
   return (
     <div>
-      <h1>{e.title}</h1>
-      <p className="small">
-        {new Date(e.startAt).toLocaleString()} — {new Date(e.endAt).toLocaleString()}
-      </p>
-      <p className="small">{e.locationName} • {e.address}</p>
-      <div className="card">{e.description}</div>
-      <a className="small" href={`/api/events/${e.slug}/ics`}>Download calendar (.ics)</a>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+        <div>
+          <h1>{event.title}</h1>
+          <Link className="small" href="/events">
+            ← Back to Events
+          </Link>
+        </div>
+
+        {/* Icons (Download / Edit / Delete) */}
+        <EventActions slug={event.slug} />
+      </div>
+
+      <div className="card">
+        <div className="small">
+          <b>When:</b>{" "}
+          {new Date(event.startAt).toLocaleString()} —{" "}
+          {new Date(event.endAt).toLocaleString()}
+        </div>
+        <div className="small">
+          <b>Where:</b> {event.locationName} • {event.address}
+        </div>
+        <div style={{ marginTop: 10 }}>{event.description}</div>
+      </div>
     </div>
   );
 }
