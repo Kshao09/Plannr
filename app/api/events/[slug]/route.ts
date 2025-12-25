@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { validateEventInput } from "@/lib/eventValidation";
 
 function slugify(s: string) {
   return s
@@ -33,45 +34,24 @@ export async function GET(_req: Request, { params }: Ctx) {
   return NextResponse.json(event);
 }
 
-export async function PUT(req: Request, { params }: Ctx) {
+export async function PUT(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-
-  const existing = await prisma.event.findUnique({ where: { slug } });
-  if (!existing) {
-    return NextResponse.json({ message: "Not found" }, { status: 404 });
-  }
-
   const body = await req.json();
 
-  const title = String(body.title ?? "").trim();
-  const description = String(body.description ?? "").trim();
-  const locationName = String(body.locationName ?? "").trim();
-  const address = String(body.address ?? "").trim();
-
-  if (!title || !description || !locationName || !address) {
-    return NextResponse.json({ message: "Missing fields" }, { status: 400 });
-  }
-
-  const startAt = new Date(body.startAt);
-  const endAt = new Date(body.endAt);
-
-  if (isNaN(startAt.getTime()) || isNaN(endAt.getTime())) {
-    return NextResponse.json({ message: "Invalid dates" }, { status: 400 });
-  }
-
-  const desiredSlug = slugify(title);
-  const nextSlug = await makeUniqueSlug(desiredSlug, existing.id);
+  const v = validateEventInput(body);
+  if (!v.ok) return NextResponse.json({ message: v.message }, { status: 400 });
 
   const updated = await prisma.event.update({
-    where: { id: existing.id },
+    where: { slug },
     data: {
-      title,
-      slug: nextSlug,
-      description,
-      startAt,
-      endAt,
-      locationName,
-      address,
+      title: v.data.title,
+      // optional: update slug only if you want title change to change URL
+      // slug: slugify(v.data.title),
+      description: v.data.description,
+      startAt: v.data.start,
+      endAt: v.data.end,
+      locationName: v.data.locationName,
+      address: v.data.address,
     },
   });
 

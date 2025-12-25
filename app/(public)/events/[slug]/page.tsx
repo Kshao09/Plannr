@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import EventActions from "./EventActions"
+import EventActions from "./edit/EventActions";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +20,7 @@ export default async function EventDetailsPage({
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+      <div className="eventHeader">
         <div>
           <h1>{event.title}</h1>
           <Link className="small" href="/events">
@@ -28,14 +28,13 @@ export default async function EventDetailsPage({
           </Link>
         </div>
 
-        {/* Icons (Download / Edit / Delete) */}
+        {/* Icon buttons: download / edit / delete */}
         <EventActions slug={event.slug} />
       </div>
 
       <div className="card">
         <div className="small">
-          <b>When:</b>{" "}
-          {new Date(event.startAt).toLocaleString()} —{" "}
+          <b>When:</b> {new Date(event.startAt).toLocaleString()} —{" "}
           {new Date(event.endAt).toLocaleString()}
         </div>
         <div className="small">

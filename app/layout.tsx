@@ -1,5 +1,5 @@
 import "./globals.css";
-import Link from "next/link";
+import { ToastProvider } from "@/components/ToastProvider";
 
 export const metadata = {
   title: "Plannr",
@@ -9,14 +9,13 @@ export const metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <html lang="en">
       <body>
-        <header className="container nav">
-          <Link href="/"><b>Plannr</b></Link>
-          <Link href="/events">Events</Link>
-          <Link href="/create">Create</Link>
-        </header>
-        <main className="container">{children}</main>
+        <div className="container">
+          <ToastProvider>{children}</ToastProvider>
+        </div>
       </body>
+    </html>
     </html>
   );
 }

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { validateEventInput } from "@/lib/eventValidation";
+//import { slugify } from "@/lib/slug";
 
 function slugify(s: string) {
   return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)+/g, "");
@@ -25,29 +27,19 @@ export async function GET() {
 export async function POST(req: Request) {
   const body = await req.json();
 
-  const title = String(body.title ?? "").trim();
-  const description = String(body.description ?? "").trim();
-  const locationName = String(body.locationName ?? "").trim();
-  const address = String(body.address ?? "").trim();
-
-  if (!title || !description || !locationName || !address) {
-    return NextResponse.json({ message: "Missing fields" }, { status: 400 });
-  }
-
-  const startAt = new Date(body.startAt);
-  const endAt = new Date(body.endAt);
-
-  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
-    return NextResponse.json({ message: "Invalid dates" }, { status: 400 });
-  }
-  if (endAt <= startAt) {
-    return NextResponse.json({ message: "End must be after start" }, { status: 400 });
-  }
-
-  const slug = await uniqueSlug(slugify(title));
+  const v = validateEventInput(body);
+  if (!v.ok) return NextResponse.json({ message: v.message }, { status: 400 });
 
   const created = await prisma.event.create({
-    data: { title, slug, description, startAt, endAt, locationName, address },
+    data: {
+      title: v.data.title,
+      slug: slugify(v.data.title),
+      description: v.data.description,
+      startAt: v.data.start,
+      endAt: v.data.end,
+      locationName: v.data.locationName,
+      address: v.data.address,
+    },
   });
 
   return NextResponse.json(created, { status: 201 });

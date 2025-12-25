@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ToastProvider";
 
 type EventDTO = {
   id: string;
@@ -9,7 +10,7 @@ type EventDTO = {
   title: string;
   description: string;
   startAt: string; // ISO
-  endAt: string;   // ISO
+  endAt: string; // ISO
   locationName: string;
   address: string;
 };
@@ -24,6 +25,8 @@ function isoToDatetimeLocal(iso: string) {
 
 export default function EditEventForm({ event }: { event: EventDTO }) {
   const router = useRouter();
+  const toast = useToast();
+
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -32,7 +35,7 @@ export default function EditEventForm({ event }: { event: EventDTO }) {
   const [locationName, setLocationName] = useState(event.locationName);
   const [address, setAddress] = useState(event.address);
 
-  // avoid SSR timezone mismatch
+  // avoid SSR timezone mismatch: set these after mount
   const [startAt, setStartAt] = useState("");
   const [endAt, setEndAt] = useState("");
 
@@ -48,35 +51,42 @@ export default function EditEventForm({ event }: { event: EventDTO }) {
     e.preventDefault();
     setLoading(true);
 
-    const res = await fetch(`/api/events/${event.slug}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title,
-        description,
-        locationName,
-        address,
-        startAt,
-        endAt,
-      }),
-    });
+    try {
+      const res = await fetch(`/api/events/${event.slug}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          description,
+          locationName,
+          address,
+          startAt,
+          endAt,
+        }),
+      });
 
-    setLoading(false);
+      if (!res.ok) {
+        const msg = await res.text();
+        toast.error(msg || "Failed to update event.", "Update failed");
+        return;
+      }
 
-    if (!res.ok) {
-      const msg = await res.text();
-      alert("Failed to update event: " + msg);
-      return;
+      const updated = await res.json();
+      toast.success("Event updated!");
+      router.push(`/events/${updated.slug}`);
+      router.refresh();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Network error.", "Update failed");
+    } finally {
+      setLoading(false);
     }
-
-    const updated = await res.json();
-    router.push(`/events/${updated.slug}`);
-    router.refresh();
   }
 
   return (
     <div>
-      <h1>Edit Event</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+        <h1>Edit Event</h1>
+      </div>
 
       <form className="card" onSubmit={onSubmit}>
         <label className="small">Title</label>
@@ -107,7 +117,11 @@ export default function EditEventForm({ event }: { event: EventDTO }) {
         />
 
         <label className="small">Location name</label>
-        <input value={locationName} onChange={(e) => setLocationName(e.target.value)} required />
+        <input
+          value={locationName}
+          onChange={(e) => setLocationName(e.target.value)}
+          required
+        />
 
         <label className="small">Address</label>
         <input value={address} onChange={(e) => setAddress(e.target.value)} required />
