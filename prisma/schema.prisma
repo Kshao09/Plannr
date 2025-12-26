@@ -1,3 +1,5 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -6,17 +8,129 @@ datasource db {
   provider = "postgresql"
 }
 
+enum Role {
+  ORGANIZER
+  MEMBER
+}
+
+enum RSVPStatus {
+  GOING
+  MAYBE
+  DECLINED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+
+  role           Role    @default(MEMBER)
+  hashedPassword String?
+
+  // your app relations
+  events Event[] @relation("OrganizerEvents")
+  rsvps  RSVP[]
+
+  // credentials email verification flow
+  emailVerificationTokens EmailVerificationToken[]
+
+  // next-auth relations
+  accounts Account[]
+  sessions Session[]
+}
+
 model Event {
   id           String   @id @default(cuid())
   slug         String   @unique
   title        String
-  description  String
+  description  String?
   startAt      DateTime
   endAt        DateTime
-  locationName String
-  address      String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  locationName String?
+  address      String?
 
-  @@index([startAt])
+  organizerId String
+  organizer   User   @relation("OrganizerEvents", fields: [organizerId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rsvps RSVP[]
+}
+
+model RSVP {
+  id     String     @id @default(cuid())
+  status RSVPStatus @default(GOING)
+
+  userId  String
+  eventId String
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, eventId])
+  @@index([userId])
+  @@index([eventId])
+}
+
+// Used by your /verify-email flow
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/**
+ * ---------- NextAuth / Auth.js Prisma Adapter Models ----------
+ */
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@index([expires])
 }

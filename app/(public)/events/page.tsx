@@ -1,54 +1,80 @@
 import Link from "next/link";
-import { headers } from "next/headers";
-import EventDate from "./eventDate";
+import { auth } from "@/auth";
 
-type EventSummary = {
-  id: string;
-  title: string;
-  slug: string;
-  startAt: string;
-  locationName: string;
+import EventSearch from "@/components/EventSearch";
+import EventList, { type EventCard } from "@/components/EventList";
+import { getEvents } from "@/lib/events";
+
+export const dynamic = "force-dynamic";
+
+type SearchParams = {
+  q?: string | string[];
 };
 
-export const dynamic = "force-dynamic"; // never cache this page
+export default async function EventsPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const sp = await searchParams;
 
-async function getBaseUrl() {
-  const h = await headers();
+  const q =
+    typeof sp.q === "string" ? sp.q : Array.isArray(sp.q) ? sp.q[0] ?? "" : "";
 
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  const proto = h.get("x-forwarded-proto") ?? "http";
+  const session = await auth();
+  const isOrganizer = session?.user?.role === "ORGANIZER";
+  const viewerRole = session?.user?.role ?? null;
 
-  if (!host) return "http://localhost:3000";
-  return `${proto}://${host}`;
-}
+  const events = await getEvents({ q });
 
-export default async function EventsPage() {
-  const base = await getBaseUrl();
-  const res = await fetch(`${base}/api/events`, { cache: "no-store" });
-
-  if (!res.ok) throw new Error("Failed to load events");
-  const events: EventSummary[] = await res.json();
+  const cards: EventCard[] = events.map((e) => ({
+    id: e.id,
+    slug: e.slug,
+    title: e.title,
+    description: e.description,
+    startAt: e.startAt.toISOString(),
+    endAt: e.endAt.toISOString(),
+    locationName: e.locationName,
+    address: e.address,
+  }));
 
   return (
-    <div>
-      <h1>Events</h1>
+    <div className="mx-auto max-w-5xl px-4 py-10">
+      <h1 className="mb-6 text-4xl font-bold tracking-tight text-white">
+        Events
+      </h1>
 
-      {events.length === 0 ? (
-        <p className="small">No events yet.</p>
+      {/* ✅ Search + Create CTA row */}
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex-1">
+          {/* If your EventSearch supports it, pass initialQuery={q} */}
+          <EventSearch />
+        </div>
+
+        {isOrganizer ? (
+          <Link
+            href="/create"
+            className="shrink-0 rounded-xl bg-white px-4 py-2 text-sm font-medium text-black hover:opacity-90"
+          >
+            Create event
+          </Link>
+        ) : null}
+      </div>
+
+      {q ? (
+        <p className="mb-3 text-sm text-zinc-400">
+          Showing results for:{" "}
+          <span className="font-medium text-zinc-200">{q}</span>
+        </p>
+      ) : null}
+
+      {cards.length === 0 ? (
+        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-zinc-200">
+          No events found.
+        </div>
       ) : (
-        events.map((e) => (
-          <div className="card" key={e.id}>
-            <Link href={`/events/${e.slug}`}>
-              <b>{e.title}</b>
-            </Link>
-
-            <div className="small">
-              <EventDate iso={e.startAt} />
-            </div>
-
-            <div className="small">{e.locationName}</div>
-          </div>
-        ))
+        // ✅ pass viewerRole so EventList can show RSVP buttons for members
+        <EventList events={cards} viewerRole={viewerRole} />
       )}
     </div>
   );

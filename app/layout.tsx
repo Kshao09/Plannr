@@ -6,16 +6,16 @@ export const metadata = {
   description: "Self-serve event marketplace",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="en">
-      <html lang="en">
-      <body>
-        <div className="container">
-          <ToastProvider>{children}</ToastProvider>
-        </div>
+    <html lang="en" suppressHydrationWarning>
+      <body className="min-h-screen w-screen overflow-x-hidden bg-[#050711] text-white">
+        <ToastProvider>{children}</ToastProvider>
       </body>
-    </html>
     </html>
   );
 }
