@@ -22,7 +22,7 @@ a { color: inherit; text-decoration: none; }
 .card { border: 1px solid #333; border-radius: 12px; padding: 12px; margin: 12px 0; }
 .small { color: #aaa; font-size: 14px; }
 
-input, textarea, button {
+.card input, .card textarea, .card button {
   width: 100%;
   padding: 10px;
   margin: 6px 0 14px 0;
@@ -31,6 +31,7 @@ input, textarea, button {
   background: #111;
   color: #fff;
 }
+
 button {
   cursor: pointer;
 }

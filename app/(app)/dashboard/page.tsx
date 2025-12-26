@@ -185,9 +185,6 @@ export default async function DashboardPage() {
           <section className="rounded-2xl border border-white/10 bg-white/5 p-6 lg:col-span-3">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-white">My events</h2>
-              <Link className="text-sm text-zinc-200 hover:underline" href="/organizer">
-                Organizer portal
-              </Link>
             </div>
 
             {myEvents.length === 0 ? (

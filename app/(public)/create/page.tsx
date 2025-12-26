@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ToastProvider";
 
@@ -16,6 +16,19 @@ export default function CreateEventPage() {
   const [locationName, setLocationName] = useState("");
   const [address, setAddress] = useState("");
 
+  function closeModal() {
+    router.push("/events");
+  }
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") closeModal();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -24,7 +37,14 @@ export default function CreateEventPage() {
       const res = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description, startAt, endAt, locationName, address }),
+        body: JSON.stringify({
+          title,
+          description,
+          startAt,
+          endAt,
+          locationName,
+          address,
+        }),
       });
 
       if (!res.ok) {
@@ -43,33 +63,138 @@ export default function CreateEventPage() {
     }
   }
 
+  const labelCls = "text-xs font-medium text-zinc-200";
+
+  // Use `!` because your globals.css has input/textarea/button rules after Tailwind utilities.
+  const inputCls =
+    "mt-1 w-full rounded-xl !bg-white px-3 py-2 text-sm !text-black !placeholder:text-zinc-500 " +
+    "!border !border-zinc-300 outline-none focus:!border-zinc-500 focus:ring-2 focus:ring-black/10";
+
+  const textareaCls =
+    "mt-1 w-full resize-none rounded-xl !bg-white px-3 py-2 text-sm !text-black !placeholder:text-zinc-500 " +
+    "!border !border-zinc-300 outline-none focus:!border-zinc-500 focus:ring-2 focus:ring-black/10";
+
   return (
-    <div>
-      <h1>Create Event</h1>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <button
+        type="button"
+        aria-label="Close create event modal"
+        onClick={closeModal}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+      />
 
-      <form className="card" onSubmit={onSubmit}>
-        <label className="small">Title</label>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} required />
+      {/* Modal */}
+      <div className="relative z-10 w-[min(860px,96vw)] max-w-none overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/80 shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+          <div>
+            <h1 className="text-lg font-semibold text-white">Create event</h1>
+            <p className="mt-0.5 text-xs text-zinc-300">
+              Fill out the details below. Press{" "}
+              <span className="font-semibold">Esc</span> to close.
+            </p>
+          </div>
+        </div>
 
-        <label className="small">Description</label>
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} required />
+        {/* Body */}
+        <form onSubmit={onSubmit} className="max-h-[70vh] overflow-y-auto px-5 py-5">
+          <div className="space-y-4">
+            <div>
+              <label className={labelCls}>Title</label>
+              <input
+                className={inputCls}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Study group meetup"
+                required
+              />
+            </div>
 
-        <label className="small">Start</label>
-        <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} required />
+            <div>
+              <label className={labelCls}>Description</label>
+              <textarea
+                className={textareaCls}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={4}
+                placeholder="What is this event about?"
+                required
+              />
+            </div>
 
-        <label className="small">End</label>
-        <input type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} required />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className={labelCls}>Start</label>
+                <input
+                  className={inputCls}
+                  type="datetime-local"
+                  value={startAt}
+                  style={{ colorScheme: "light" }}
+                  onChange={(e) => setStartAt(e.target.value)}
+                  required
+                />
+              </div>
 
-        <label className="small">Location name</label>
-        <input value={locationName} onChange={(e) => setLocationName(e.target.value)} required />
+              <div>
+                <label className={labelCls}>End</label>
+                <input
+                  className={inputCls}
+                  type="datetime-local"
+                  value={endAt}
+                  style={{ colorScheme: "light" }}
+                  onChange={(e) => setEndAt(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
 
-        <label className="small">Address</label>
-        <input value={address} onChange={(e) => setAddress(e.target.value)} required />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className={labelCls}>Location name</label>
+                <input
+                  className={inputCls}
+                  value={locationName}
+                  onChange={(e) => setLocationName(e.target.value)}
+                  placeholder="e.g. FIU Library"
+                  required
+                />
+              </div>
 
-        <button disabled={loading} style={{ marginTop: 12 }}>
-          {loading ? "Creating..." : "Create"}
-        </button>
-      </form>
+              <div>
+                <label className={labelCls}>Address</label>
+                <input
+                  className={inputCls}
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="Street, city, state"
+                  required
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="mt-6 flex items-center justify-end gap-3 border-t border-white/10 pt-4">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="w-auto rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-60"
+              disabled={loading}
+            >
+              Cancel
+            </button>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-auto rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? "Creating..." : "Create"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

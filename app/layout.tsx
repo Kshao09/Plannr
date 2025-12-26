@@ -1,20 +1,16 @@
 import "./globals.css";
-import { ToastProvider } from "@/components/ToastProvider";
+import Providers from "@/components/Providers";
 
 export const metadata = {
   title: "Plannr",
-  description: "Self-serve event marketplace",
+  description: "Event planner",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen w-screen overflow-x-hidden bg-[#050711] text-white">
-        <ToastProvider>{children}</ToastProvider>
+      <body>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

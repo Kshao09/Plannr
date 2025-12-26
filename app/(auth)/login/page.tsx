@@ -1,5 +1,6 @@
 // app/(auth)/login/page.tsx
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { signIn } from "@/auth";
 
 type SP = { next?: string | string[]; error?: string | string[] };
@@ -20,7 +21,9 @@ export default async function LoginPage({
   const errorText =
     error === "EmailNotVerified"
       ? "Please verify your email before logging in."
-      : error === "CredentialsSignin"
+      : error === "EmailNotFound"
+      ? "Email not found."
+      : error === "InvalidCredentials" || error === "CredentialsSignin" || error === "credentials"
       ? "Invalid email or password."
       : error
       ? "Could not sign you in."
@@ -45,22 +48,31 @@ export default async function LoginPage({
           action={async (formData) => {
             "use server";
 
-            const email = String(formData.get("email") ?? "")
-              .toLowerCase()
-              .trim();
+            const email = String(formData.get("email") ?? "").toLowerCase().trim();
             const password = String(formData.get("password") ?? "");
 
             if (!email || !password) {
-              throw new Error("Missing email or password.");
+              redirect(`/login?next=${encodeURIComponent(next)}&error=InvalidCredentials`);
             }
 
-            // If your credentials provider denies unverified users,
-            // you can redirect back with ?error=EmailNotVerified from authorize().
-            await signIn("credentials", {
-              email,
-              password,
-              redirectTo: next,
-            });
+            try {
+              await signIn("credentials", {
+                email,
+                password,
+                redirectTo: next,
+              });
+            } catch (err: any) {
+              // If NextAuth/Next triggers a redirect, don't swallow it
+              if (err?.digest?.startsWith("NEXT_REDIRECT")) throw err;
+
+              // Pull custom code from our thrown CredentialsSignin error
+              const code =
+                err?.cause?.code || err?.code || err?.type || "CredentialsSignin";
+
+              redirect(
+                `/login?next=${encodeURIComponent(next)}&error=${encodeURIComponent(code)}`
+              );
+            }
           }}
         >
           <input

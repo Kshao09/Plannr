@@ -1,80 +1,54 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 export default function EventSearch() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [isPending, startTransition] = useTransition();
 
-  // Read q from URL
-  const urlQ = searchParams.get("q") ?? "";
+  const initial = searchParams.get("q") ?? "";
+  const [q, setQ] = useState(initial);
 
-  // Local input state
-  const [q, setQ] = useState(urlQ);
-
-  // Keep input synced when user navigates (back/forward) or URL changes
-  useEffect(() => {
-    setQ(urlQ);
-  }, [urlQ]);
-
-  // Convert searchParams to a stable string so it can be used in deps safely
-  const searchParamsString = useMemo(() => searchParams.toString(), [searchParams]);
-
+  // Debounce URL updates
   useEffect(() => {
     const t = setTimeout(() => {
-      const cleaned = q.trim();
+      const params = new URLSearchParams(Array.from(searchParams.entries()));
 
-      // Optional: don’t search until 2 chars
-      // if (cleaned.length > 0 && cleaned.length < 2) return;
-
-      // If URL already matches, do nothing
-      if (cleaned === urlQ) return;
-
-      const params = new URLSearchParams(searchParamsString);
-
-      if (cleaned) params.set("q", cleaned);
+      if (q.trim()) params.set("q", q.trim());
       else params.delete("q");
 
-      // Optional: reset pagination
-      // params.delete("page");
-
-      startTransition(() => {
-        const qs = params.toString();
-        router.replace(qs ? `${pathname}?${qs}` : pathname);
-      });
+      router.replace(`${pathname}?${params.toString()}`);
     }, 250);
 
     return () => clearTimeout(t);
-  }, [q, urlQ, pathname, router, searchParamsString, startTransition]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
+
+  const inputCls =
+    "w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-100 " +
+    "placeholder:text-zinc-400 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10";
+
+  // ✅ Dark theme button (no white background)
+  const createBtnCls =
+    "w-auto shrink-0 whitespace-nowrap rounded-2xl border border-white/10 bg-white/5 px-5 py-3 " +
+    "text-sm font-semibold text-zinc-100 shadow-sm transition hover:bg-white/10 hover:border-white/20 " +
+    "active:translate-y-[1px]";
 
   return (
-    <div className="mb-4 flex items-center gap-2">
+    <div className="mt-4 flex items-center gap-4">
       <input
+        className={inputCls}
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Search events..."
-        className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-zinc-100
-                   placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-white/20"
       />
 
-      {q ? (
-        <button
-          type="button"
-          onClick={() => setQ("")}
-          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-200
-                     transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/20"
-          disabled={isPending}
-        >
-          Clear
-        </button>
-      ) : null}
-
-      <span className="text-sm text-zinc-500">
-        {isPending ? "Searching..." : ""}
-      </span>
+      <Link href="/create" className={createBtnCls}>
+        Create Event
+      </Link>
     </div>
   );
 }

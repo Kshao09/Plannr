@@ -1,59 +1,116 @@
+// auth.ts
 import NextAuth from "next-auth";
+import { PrismaAdapter } from "@auth/prisma-adapter";
 import Credentials from "next-auth/providers/credentials";
-import { prisma } from "@/lib/prisma";
+import GitHub from "next-auth/providers/github";
 import bcrypt from "bcryptjs";
+import { CredentialsSignin } from "@auth/core/errors";
+
+import { prisma } from "@/lib/prisma";
+
+type Creds = Partial<Record<"email" | "password", unknown>>;
+
+// ✅ Custom errors so you can show specific messages in UI
+class EmailNotFoundError extends CredentialsSignin {
+  code = "EmailNotFound";
+}
+class InvalidCredentialsError extends CredentialsSignin {
+  code = "InvalidCredentials";
+}
+class EmailNotVerifiedError extends CredentialsSignin {
+  code = "EmailNotVerified";
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  session: { strategy: "jwt" }, // ✅ simplest; avoids adapter session tables
+  adapter: PrismaAdapter(prisma),
+  session: { strategy: "jwt" },
+
+  // Optional but recommended so all auth errors land on /login
   pages: {
     signIn: "/login",
   },
+
   providers: [
+    ...(process.env.GITHUB_ID && process.env.GITHUB_SECRET
+      ? [
+          GitHub({
+            clientId: process.env.GITHUB_ID!,
+            clientSecret: process.env.GITHUB_SECRET!,
+          }),
+        ]
+      : []),
+
     Credentials({
       name: "Credentials",
       credentials: {
-        email: { label: "Email", type: "email" },
+        email: { label: "Email", type: "email", placeholder: "you@example.com" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
-        const email = String(credentials?.email ?? "").toLowerCase().trim();
-        const password = String(credentials?.password ?? "");
 
-        if (!email || !password) return null;
+      async authorize(credentials: Creds) {
+        const email =
+          typeof credentials?.email === "string"
+            ? credentials.email.trim().toLowerCase()
+            : "";
+
+        const password =
+          typeof credentials?.password === "string" ? credentials.password : "";
+
+        if (!email || !password) throw new InvalidCredentialsError();
 
         const user = await prisma.user.findUnique({
           where: { email },
-          select: { id: true, email: true, name: true, hashedPassword: true, role: true, emailVerified: true },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            image: true,
+            role: true,
+            hashedPassword: true,
+            emailVerified: true,
+          },
         });
 
-        if (!user?.hashedPassword) return null;
+        if (!user) throw new EmailNotFoundError();
+        if (!user.hashedPassword) throw new InvalidCredentialsError();
+
+        // ✅ Require verified email for credentials login
+        if (!user.emailVerified) throw new EmailNotVerifiedError();
 
         const ok = await bcrypt.compare(password, user.hashedPassword);
-        if (!ok) return null;
-
-        // OPTIONAL: block login until email verified
-        // if (!user.emailVerified) return null;
+        if (!ok) throw new InvalidCredentialsError();
 
         return {
           id: user.id,
           email: user.email,
           name: user.name,
+          image: user.image,
           role: user.role,
-        } as any;
+        };
       },
     }),
   ],
+
   callbacks: {
     async jwt({ token, user }) {
-      if (user) {
-        token.id = (user as any).id;
-        token.role = (user as any).role;
+      if (user?.id) token.sub = user.id;
+      if (user && "role" in user) token.role = (user as any).role;
+
+      // OAuth users: load role once
+      if (token.sub && !token.role) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.sub },
+          select: { role: true },
+        });
+        if (dbUser?.role) token.role = dbUser.role;
       }
+
       return token;
     },
+
     async session({ session, token }) {
-      (session.user as any).id = token.id;
-      (session.user as any).role = token.role;
+      if (session.user && token.sub) (session.user as any).id = token.sub;
+      if (session.user && token.role) (session.user as any).role = token.role;
       return session;
     },
   },

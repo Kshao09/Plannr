@@ -15,5 +15,18 @@ export async function getEvents({ q }: { q?: string }) {
         }
       : undefined,
     orderBy: [{ startAt: "asc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+      description: true,
+      startAt: true,
+      endAt: true,
+      locationName: true,
+      address: true,
+      organizerId: true, // ✅ needed for organizer-owned Edit button
+      createdAt: true,
+      updatedAt: true,
+    },
   });
 }

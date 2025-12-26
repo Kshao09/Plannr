@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/db"; // ✅ use the same one you use in lib/events.ts
 import EditEventForm from "./EditEventForm";
 
 export const dynamic = "force-dynamic";
@@ -20,9 +20,9 @@ export default async function EditEventPage({
         id: event.id,
         slug: event.slug,
         title: event.title,
-        description: event.description,
-        locationName: event.locationName,
-        address: event.address,
+        description: event.description ?? "",     // ✅ avoid null
+        locationName: event.locationName ?? "",   // ✅ avoid null
+        address: event.address ?? "",             // ✅ avoid null
         startAt: event.startAt.toISOString(),
         endAt: event.endAt.toISOString(),
       }}

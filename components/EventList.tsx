@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { useSession } from "next-auth/react";
 
 export type EventCard = {
   id: string;
@@ -12,6 +12,7 @@ export type EventCard = {
   endAt: string; // ISO
   locationName: string;
   address: string;
+  organizerId: string; // needed for ownership checks if you use it elsewhere
 };
 
 function formatDateTime(iso: string) {
@@ -37,13 +38,23 @@ function DetailInline({
     <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-4 transition hover:bg-white/[0.08]">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
         <div className="text-sm font-semibold text-zinc-200">{label}:</div>
-        <div className="text-sm text-zinc-100 break-words">{value}</div>
+        <div className="break-words text-sm text-zinc-100">{value}</div>
       </div>
     </div>
   );
 }
 
-export default function EventList({ events }: { events: EventCard[] }) {
+export default function EventList({
+  events,
+  viewerRole,
+}: {
+  events: EventCard[];
+  viewerRole?: "ORGANIZER" | "MEMBER" | null;
+}) {
+
+  // session not used in modal anymore, but keeping import is fine if you’ll use later
+  useSession();
+
   const [openId, setOpenId] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
 
@@ -52,12 +63,26 @@ export default function EventList({ events }: { events: EventCard[] }) {
     [events, openId]
   );
 
+  // Open/close dialog
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
 
     if (selected && !dialog.open) dialog.showModal();
     if (!selected && dialog.open) dialog.close();
+  }, [selected]);
+
+  // Lock background scroll while modal is open
+  useEffect(() => {
+    const html = document.documentElement;
+    const prevOverflow = html.style.overflow;
+
+    if (selected) html.style.overflow = "hidden";
+    else html.style.overflow = prevOverflow;
+
+    return () => {
+      html.style.overflow = prevOverflow;
+    };
   }, [selected]);
 
   function onClose() {
@@ -91,16 +116,23 @@ export default function EventList({ events }: { events: EventCard[] }) {
         ref={dialogRef}
         onClose={onClose}
         className="
-          w-[min(96vw,64rem)]
+          fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2
+          m-0 w-[min(96vw,64rem)] max-h-[90vh] overflow-hidden
           rounded-3xl border border-white/10
           bg-gradient-to-b from-zinc-950 via-zinc-950 to-black
-          p-0 text-zinc-100
+          p-0 text-zinc-100 outline-none
           shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_30px_120px_rgba(0,0,0,0.8)]
           backdrop:bg-black/70 backdrop:backdrop-blur-md
         "
       >
         {selected ? (
-          <div className="relative">
+          <div
+            className="
+              relative max-h-[90vh] overflow-y-auto
+              [scrollbar-width:none] [-ms-overflow-style:none]
+              [&::-webkit-scrollbar]:hidden
+            "
+          >
             {/* glow */}
             <div className="pointer-events-none absolute inset-0 rounded-3xl">
               <div className="absolute -top-20 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-indigo-500/20 blur-3xl" />
@@ -114,17 +146,12 @@ export default function EventList({ events }: { events: EventCard[] }) {
                 <h2 className="text-3xl font-semibold tracking-tight text-white">
                   {selected.title}
                 </h2>
-                <p className="mt-2 text-sm text-zinc-400">
-                  {selected.locationName}
-                </p>
               </div>
 
               {/* details */}
               <div className="mt-2 space-y-4">
-                {/* Description (full width) */}
                 <DetailInline label="Description" value={selected.description} />
 
-                {/* 2-column grid for the rest */}
                 <div className="grid gap-4 md:grid-cols-2">
                   <DetailInline
                     label="When"
@@ -139,25 +166,14 @@ export default function EventList({ events }: { events: EventCard[] }) {
 
                   <DetailInline label="Location" value={selected.locationName} />
 
-                  {/* Address full width (usually long) */}
                   <div className="md:col-span-2">
                     <DetailInline label="Address" value={selected.address} />
                   </div>
                 </div>
               </div>
 
-              {/* actions */}
-              <div className="mt-6 space-y-3">
-                <Link
-                  href={`/events/${selected.slug}`}
-                  className="block w-full rounded-2xl border border-indigo-400/20 bg-indigo-500/10 px-4 py-3
-                             text-center text-sm font-semibold text-indigo-100
-                             transition hover:bg-indigo-500/15 hover:border-indigo-400/30
-                             focus:outline-none focus:ring-2 focus:ring-indigo-400/30"
-                >
-                  Open full page →
-                </Link>
-
+              {/* bottom close */}
+              <div className="mt-6">
                 <button
                   type="button"
                   onClick={() => dialogRef.current?.close()}
