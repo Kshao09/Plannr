@@ -1,4 +1,3 @@
-// app/(auth)/signup/actions.ts
 "use server";
 
 import bcrypt from "bcryptjs";
@@ -26,16 +25,13 @@ export async function signupAction(
 
   if (!email) return { error: "Email is required." };
   if (!isValidEmail(email)) return { error: "Please enter a valid email." };
-  if (password.length < 8)
-    return { error: "Password must be at least 8 characters." };
+  if (password.length < 8) return { error: "Password must be at least 8 characters." };
   if (password !== password2) return { error: "Passwords do not match." };
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return { error: "An account with this email already exists." };
 
-  // We compute these so redirect happens OUTSIDE try/catch
-  let sent = false;
-
+  let token = "";
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -50,21 +46,12 @@ export async function signupAction(
       select: { id: true },
     });
 
-    const token = crypto.randomBytes(32).toString("hex");
+    token = crypto.randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24);
 
     await prisma.emailVerificationToken.create({
       data: { userId: user.id, token, expiresAt },
     });
-
-    // Email sending is allowed to fail; we still proceed
-    try {
-      const result = await sendVerificationEmail({ to: email, token });
-      sent = !!result?.sent;
-    } catch (mailErr) {
-      console.error("[signupAction] email send failed:", mailErr);
-      sent = false;
-    }
   } catch (err) {
     console.error("[signupAction] failed:", err);
 
@@ -76,6 +63,15 @@ export async function signupAction(
     return { error: msg };
   }
 
-  // ✅ redirect must not be inside try/catch (prevents NEXT_REDIRECT being treated as an error)
+  // Send email separately (don’t block signup UX)
+  let sent = false;
+  try {
+    const result = await sendVerificationEmail({ to: email, token });
+    sent = !!result.sent;
+  } catch (err) {
+    console.error("[signupAction] email failed:", err);
+    sent = false;
+  }
+
   redirect(`/check-email?email=${encodeURIComponent(email)}&sent=${sent ? "1" : "0"}`);
 }

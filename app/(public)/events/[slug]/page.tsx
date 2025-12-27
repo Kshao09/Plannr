@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/db"; // <- change to "@/lib/prisma" if that's your actual export
+import { prisma } from "@/lib/prisma";
 import EventActions from "./EventActions";
+import EventRSVP from "@/components/EventRSVP";
 
 export const dynamic = "force-dynamic";
 
-function formatDateTime(iso: Date) {
+function formatDateTime(d: Date) {
   return new Intl.DateTimeFormat(undefined, {
     weekday: "short",
     month: "short",
@@ -14,7 +15,7 @@ function formatDateTime(iso: Date) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(iso);
+  }).format(d);
 }
 
 export default async function EventDetailPage({
@@ -25,6 +26,8 @@ export default async function EventDetailPage({
   const { slug } = await params;
 
   const session = await auth();
+  const userId = session?.user ? (session.user as any).id : null;
+  const role = session?.user ? (session.user as any).role : null;
 
   const event = await prisma.event.findUnique({
     where: { slug },
@@ -44,8 +47,17 @@ export default async function EventDetailPage({
 
   if (!event) notFound();
 
-  const canManage =
-    session?.user?.role === "ORGANIZER" && session.user.id === event.organizerId;
+  const canManage = role === "ORGANIZER" && userId === event.organizerId;
+
+  // ✅ Load initial RSVP status (only if logged in)
+  let initialStatus: "GOING" | "MAYBE" | "DECLINED" | null = null;
+  if (userId) {
+    const existing = await prisma.rSVP.findUnique({
+      where: { userId_eventId: { userId, eventId: event.id } },
+      select: { status: true },
+    });
+    initialStatus = existing?.status ?? null;
+  }
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10">
@@ -77,7 +89,6 @@ export default async function EventDetailPage({
           </div>
         </div>
 
-        {/* Actions (download always; edit/delete only for owner organizer) */}
         <div className="shrink-0">
           <EventActions slug={event.slug} canManage={canManage} />
         </div>
@@ -113,6 +124,20 @@ export default async function EventDetailPage({
               ) : null}
             </div>
           </div>
+
+          {/* ✅ RSVP */}
+          {userId ? (
+            <EventRSVP
+              slug={event.slug}
+              initialStatus={initialStatus}
+              // optional: block organizers from RSVPing
+              disabled={role === "ORGANIZER" && userId === event.organizerId}
+            />
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-4 text-sm text-zinc-200">
+              Log in to RSVP.
+            </div>
+          )}
 
           {/* Description */}
           <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-4 transition hover:bg-white/[0.08]">

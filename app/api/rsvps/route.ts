@@ -6,11 +6,13 @@ const ALLOWED = new Set(["GOING", "MAYBE", "DECLINED"]);
 
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user?.id) {
+  const userId = session?.user ? (session.user as any).id : null;
+
+  if (!userId) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await req.json().catch(() => null);
+  const body = await req.json().catch(() => ({}));
   const eventId = String(body?.eventId ?? "");
   const status = String(body?.status ?? "");
 
@@ -18,33 +20,28 @@ export async function POST(req: Request) {
     return NextResponse.json({ message: "Bad request" }, { status: 400 });
   }
 
-  // ensure event exists (optional but good)
-  const exists = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true } });
+  const exists = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { id: true },
+  });
   if (!exists) return NextResponse.json({ message: "Event not found" }, { status: 404 });
 
   const rsvp = await prisma.rSVP.upsert({
-    where: {
-      userId_eventId: {
-        userId: session.user.id,
-        eventId,
-      },
-    },
+    where: { userId_eventId: { userId, eventId } },
     update: { status: status as any },
-    create: {
-      userId: session.user.id,
-      eventId,
-      status: status as any,
-    },
+    create: { userId, eventId, status: status as any },
   });
 
   return NextResponse.json(rsvp, { status: 200 });
 }
 
 // GET /api/rsvps?mine=1
-// GET /api/rsvps?eventId=...  (organizer-only attendees list)
+// GET /api/rsvps?eventId=...  (organizer-only attendee list)
 export async function GET(req: Request) {
   const session = await auth();
-  if (!session?.user?.id) {
+  const userId = session?.user ? (session.user as any).id : null;
+
+  if (!userId) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
 
@@ -54,7 +51,7 @@ export async function GET(req: Request) {
 
   if (mine) {
     const rsvps = await prisma.rSVP.findMany({
-      where: { userId: session.user.id },
+      where: { userId },
       include: {
         event: {
           select: {
@@ -69,30 +66,27 @@ export async function GET(req: Request) {
       },
       orderBy: { updatedAt: "desc" },
     });
-    return NextResponse.json(rsvps);
+    return NextResponse.json(rsvps, { status: 200 });
   }
 
   if (eventId) {
-    // organizer-only: verify ownership
     const ev = await prisma.event.findUnique({
       where: { id: eventId },
       select: { organizerId: true },
     });
 
     if (!ev) return NextResponse.json({ message: "Event not found" }, { status: 404 });
-    if (ev.organizerId !== session.user.id) {
+    if (ev.organizerId !== userId) {
       return NextResponse.json({ message: "Forbidden" }, { status: 403 });
     }
 
     const attendees = await prisma.rSVP.findMany({
       where: { eventId },
-      include: {
-        user: { select: { id: true, name: true, email: true } },
-      },
+      include: { user: { select: { id: true, name: true, email: true } } },
       orderBy: { createdAt: "asc" },
     });
 
-    return NextResponse.json(attendees);
+    return NextResponse.json(attendees, { status: 200 });
   }
 
   return NextResponse.json({ message: "Bad request" }, { status: 400 });
