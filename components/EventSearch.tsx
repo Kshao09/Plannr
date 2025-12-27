@@ -3,11 +3,16 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 
 export default function EventSearch() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+
+  const { data: session, status } = useSession();
+  const role = (session?.user as any)?.role as string | undefined;
+  const isOrganizer = status === "authenticated" && role === "ORGANIZER";
 
   const initial = searchParams.get("q") ?? "";
   const [q, setQ] = useState(initial);
@@ -20,7 +25,8 @@ export default function EventSearch() {
       if (q.trim()) params.set("q", q.trim());
       else params.delete("q");
 
-      router.replace(`${pathname}?${params.toString()}`);
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname);
     }, 250);
 
     return () => clearTimeout(t);
@@ -28,7 +34,7 @@ export default function EventSearch() {
   }, [q]);
 
   const inputCls =
-    "w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-100 " +
+    "flex-1 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-100 " +
     "placeholder:text-zinc-400 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10";
 
   // ✅ Dark theme button (no white background)
@@ -46,9 +52,11 @@ export default function EventSearch() {
         placeholder="Search events..."
       />
 
-      <Link href="/create" className={createBtnCls}>
-        Create Event
-      </Link>
+      {isOrganizer && (
+        <Link href="/create" className={createBtnCls}>
+          Create Event
+        </Link>
+      )}
     </div>
   );
 }

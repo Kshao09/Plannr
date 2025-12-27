@@ -29,14 +29,10 @@ model User {
   role           Role    @default(MEMBER)
   hashedPassword String?
 
-  // your app relations
   events Event[] @relation("OrganizerEvents")
   rsvps  RSVP[]
 
-  // credentials email verification flow
   emailVerificationTokens EmailVerificationToken[]
-
-  // next-auth relations
   accounts Account[]
   sessions Session[]
 }
@@ -50,6 +46,10 @@ model Event {
   endAt        DateTime
   locationName String?
   address      String?
+
+  // NEW
+  category     String?
+  image        String?
 
   organizerId String
   organizer   User   @relation("OrganizerEvents", fields: [organizerId], references: [id])
@@ -78,7 +78,6 @@ model RSVP {
   @@index([eventId])
 }
 
-// Used by your /verify-email flow
 model EmailVerificationToken {
   id        String   @id @default(cuid())
   userId    String
@@ -92,9 +91,6 @@ model EmailVerificationToken {
   @@index([expiresAt])
 }
 
-/**
- * ---------- NextAuth / Auth.js Prisma Adapter Models ----------
- */
 model Account {
   id                String  @id @default(cuid())
   userId            String

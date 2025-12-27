@@ -1,76 +1,89 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { validateEventInput } from "@/lib/eventValidation";
-import { auth } from "@/auth";
 
-function slugify(s: string) {
-  return s
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)+/g, "");
+export const runtime = "nodejs";
+
+function pickFallbackImage(title: string, category?: string | null) {
+  const t = title.toLowerCase();
+  const c = (category ?? "").toLowerCase();
+
+  // ✅ ensure rock concert always uses rock image
+  if (t.includes("rock") || t.includes("concert") || c.includes("music")) return "/images/rock001.png";
+  if (t.includes("ai") || t.includes("robot") || c.includes("tech")) return "/images/ai001.png";
+  if (t.includes("food") || t.includes("truck") || c.includes("drink")) return "/images/food001.png";
+  if (t.includes("chess") || c.includes("arts")) return "/images/chess001.png";
+  if (t.includes("soccer")) return "/images/soccer001.png";
+  if (t.includes("basket")) return "/images/basketball001.png";
+  return "/images/rooftop001.png";
 }
 
-async function uniqueSlug(base: string) {
-  let slug = base;
-  let i = 2;
-  while (await prisma.event.findUnique({ where: { slug } })) {
-    slug = `${base}-${i++}`;
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+
+  const q = (searchParams.get("q") || "").trim();
+  const city = (searchParams.get("city") || "").trim();
+  const category = (searchParams.get("category") || "").trim();
+  const take = Math.min(parseInt(searchParams.get("take") || "12", 10) || 12, 50);
+
+  const now = new Date();
+
+  const AND: any[] = [{ startAt: { gte: now } }];
+
+  if (q) {
+    AND.push({
+      OR: [
+        { title: { contains: q, mode: "insensitive" } },
+        { description: { contains: q, mode: "insensitive" } },
+        { locationName: { contains: q, mode: "insensitive" } },
+        { address: { contains: q, mode: "insensitive" } },
+      ],
+    });
   }
-  return slug;
-}
 
-export async function GET() {
-  const events = await prisma.event.findMany({
+  if (city) {
+    // ✅ city is usually in address or locationName; filter by both
+    AND.push({
+      OR: [
+        { locationName: { contains: city, mode: "insensitive" } },
+        { address: { contains: city, mode: "insensitive" } },
+      ],
+    });
+  }
+
+  if (category) {
+    AND.push({ category: { equals: category, mode: "insensitive" } });
+  }
+
+  const rows = await prisma.event.findMany({
+    where: { AND },
     orderBy: { startAt: "asc" },
-    select: { id: true, title: true, slug: true, startAt: true, locationName: true },
-  });
-
-  return NextResponse.json(events);
-}
-
-export async function POST(req: Request) {
-  // ✅ NextAuth v5: get session anywhere server-side
-  const session = await auth();
-  const userId = (session?.user as any)?.id as string | undefined;
-
-  if (!userId) {
-    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-  }
-
-  const body = await req.json();
-
-  const v = validateEventInput(body);
-  if (!v.ok) return NextResponse.json({ message: v.message }, { status: 400 });
-
-  // Support either validator output shape: start/end OR startAt/endAt
-  const startRaw = (v.data as any).startAt ?? (v.data as any).start;
-  const endRaw = (v.data as any).endAt ?? (v.data as any).end;
-
-  const startAt = new Date(startRaw);
-  const endAt = new Date(endRaw);
-
-  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
-    return NextResponse.json({ message: "Invalid start/end date." }, { status: 400 });
-  }
-
-  const base = slugify(v.data.title);
-  const slug = await uniqueSlug(base);
-
-  const created = await prisma.event.create({
-    data: {
-      title: v.data.title,
-      slug,
-      description: v.data.description ?? null,
-      startAt,
-      endAt,
-      locationName: v.data.locationName ?? null,
-      address: v.data.address ?? null,
-
-      // ✅ required by your schema
-      organizerId: userId,
+    take,
+    select: {
+      id: true,
+      title: true,
+      slug: true,
+      startAt: true,
+      endAt: true,
+      locationName: true,
+      address: true,
+      category: true,
+      image: true,
+      organizer: { select: { name: true } },
     },
   });
 
-  return NextResponse.json(created, { status: 201 });
+  const payload = rows.map((e) => ({
+    id: e.id,
+    title: e.title,
+    slug: e.slug,
+    startAt: e.startAt,
+    endAt: e.endAt,
+    locationName: e.locationName,
+    address: e.address,
+    category: e.category,
+    image: e.image ?? pickFallbackImage(e.title, e.category),
+    organizerName: e.organizer?.name ?? null,
+  }));
+
+  return NextResponse.json(payload);
 }
