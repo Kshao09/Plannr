@@ -33,8 +33,8 @@ model User {
   rsvps  RSVP[]
 
   emailVerificationTokens EmailVerificationToken[]
-  accounts Account[]
-  sessions Session[]
+  accounts                Account[]
+  sessions                Session[]
 }
 
 model Event {
@@ -48,8 +48,8 @@ model Event {
   address      String?
 
   // NEW
-  category     String?
-  image        String?
+  category String?
+  image    String?
 
   organizerId String
   organizer   User   @relation("OrganizerEvents", fields: [organizerId], references: [id])
@@ -58,6 +58,10 @@ model Event {
   updatedAt DateTime @updatedAt
 
   rsvps RSVP[]
+
+  @@index([startAt])
+  @@index([locationName])
+  @@index([category])
 }
 
 model RSVP {
