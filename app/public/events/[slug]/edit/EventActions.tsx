@@ -40,7 +40,7 @@ export default function EventActions({ slug }: { slug: string }) {
       }
 
       setConfirmOpen(false);
-      router.push("/events");
+      router.push("/public/events");
       router.refresh();
     } catch (e: any) {
       setError(e?.message ?? "Delete failed.");
@@ -65,7 +65,7 @@ export default function EventActions({ slug }: { slug: string }) {
         {/* Edit */}
         <Link
           className="iconBtn"
-          href={`/events/${encodeURIComponent(slug)}/edit`}
+          href={`/public/events/${encodeURIComponent(slug)}/edit`}
           title="Edit"
           aria-label="Edit"
         >

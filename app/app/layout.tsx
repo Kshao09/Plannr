@@ -8,12 +8,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen bg-black">
       <header className="border-b border-white/10">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
-          <Link href="/dashboard" className="text-lg font-semibold text-white">
+          <Link href="/app/dashboard" className="text-lg font-semibold text-white">
             Plannr
           </Link>
 
           <nav className="flex items-center gap-3">
-            <Link href="/events" className="text-sm text-zinc-200 hover:text-white">
+            <Link href="/public/events" className="text-sm text-zinc-200 hover:text-white">
               Events
             </Link>
 

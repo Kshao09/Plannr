@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { validateEventInput } from "@/lib/eventValidation";
+import { auth } from "@/auth";
 
 function slugify(s: string) {
   return s
@@ -68,4 +69,57 @@ export async function DELETE(_req: Request, { params }: Ctx) {
 
   await prisma.event.delete({ where: { id: existing.id } });
   return NextResponse.json({ ok: true });
+}
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: { slug: string } }
+) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const role = (session.user as any)?.role;
+  if (role !== "ORGANIZER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const sessionId = (session.user as any)?.id as string | undefined;
+  const sessionEmail = session.user.email as string | undefined;
+
+  let userId = sessionId;
+  if (!userId && sessionEmail) {
+    const dbUser = await prisma.user.findUnique({ where: { email: sessionEmail }, select: { id: true } });
+    userId = dbUser?.id;
+  }
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const event = await prisma.event.findUnique({
+    where: { slug: params.slug },
+    select: { id: true, organizerId: true },
+  });
+  if (!event) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (event.organizerId !== userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const body = await req.json().catch(() => ({}));
+
+  const startAt = body?.startAt ? new Date(body.startAt) : undefined;
+  const endAt = body?.endAt ? new Date(body.endAt) : undefined;
+  if (startAt && Number.isNaN(startAt.getTime())) return NextResponse.json({ error: "Invalid startAt" }, { status: 400 });
+  if (endAt && Number.isNaN(endAt.getTime())) return NextResponse.json({ error: "Invalid endAt" }, { status: 400 });
+  if (startAt && endAt && endAt <= startAt) return NextResponse.json({ error: "endAt must be after startAt" }, { status: 400 });
+
+  const updated = await prisma.event.update({
+    where: { slug: params.slug },
+    data: {
+      title: typeof body.title === "string" ? body.title : undefined,
+      description: body.description ?? undefined,
+      startAt: startAt ?? undefined,
+      endAt: endAt ?? undefined,
+      locationName: body.locationName ?? undefined,
+      address: body.address ?? undefined,
+      category: body.category ?? undefined,
+      image: body.image ?? undefined,
+    },
+    select: { slug: true },
+  });
+
+  return NextResponse.json({ ok: true, event: updated });
 }

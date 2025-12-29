@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useMemo, useState } from "react";
 
 export type EventLite = {
   id: string;
@@ -14,6 +15,7 @@ export type EventLite = {
   organizerName?: string | null;
   category?: string | null;
   image?: string | null;
+  isSaved?: boolean; // ✅ NEW
 };
 
 function formatDatePill(iso: string) {
@@ -32,7 +34,6 @@ function formatMeta(iso: string, location?: string | null) {
 }
 
 function fallbackImage(category?: string | null) {
-  // Use your existing images as fallbacks
   if (!category) return "/images/img001_v0.png";
   if (category === "Food & Drink") return "/images/img002_v0.png";
   if (category === "Tech") return "/images/img001_v0.png";
@@ -45,23 +46,59 @@ export default function EventCard({ e }: { e: EventLite }) {
   const router = useRouter();
   const { data: session, status } = useSession();
 
-  const { month, day } = formatDatePill(e.startAt);
-  const meta = formatMeta(e.startAt, e.locationName ?? "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(!!e.isSaved);
+
+  const { month, day } = useMemo(() => formatDatePill(e.startAt), [e.startAt]);
+  const meta = useMemo(() => formatMeta(e.startAt, e.locationName ?? ""), [e.startAt, e.locationName]);
   const img = e.image ?? fallbackImage(e.category);
 
   async function onRSVP() {
-    // If you want real one-click RSVP here, swap this navigation
-    // to your existing RSVP endpoint.
     if (status !== "authenticated" || !session?.user) {
       router.push("/login");
       return;
     }
-    router.push(`/events/${e.slug}`);
+    router.push(`/public/events/${e.slug}`);
+  }
+
+  async function onToggleSave() {
+    if (status !== "authenticated" || !session?.user) {
+      router.push("/login");
+      return;
+    }
+
+    if (saving) return;
+    setSaving(true);
+
+    // optimistic
+    const prev = saved;
+    setSaved(!prev);
+
+    try {
+      const res = await fetch("/api/saved/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId: e.id }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ?? res.statusText);
+      }
+
+      const data = await res.json();
+      setSaved(!!data.saved);
+    } catch {
+      // revert if failed
+      setSaved(prev);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <div className="group overflow-hidden rounded-3xl border border-white/10 bg-white/5 transition hover:border-white/20 hover:bg-white/7">
-      <Link href={`/events/${e.slug}`} className="block">
+      <Link href={`/public/events/${e.slug}`} className="block">
         <div className="relative h-44 w-full overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -71,7 +108,6 @@ export default function EventCard({ e }: { e: EventLite }) {
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
 
-          {/* Date pill */}
           <div className="absolute left-3 top-3 rounded-2xl border border-white/15 bg-black/40 px-3 py-2 text-center backdrop-blur">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-200">
               {month}
@@ -79,7 +115,6 @@ export default function EventCard({ e }: { e: EventLite }) {
             <div className="text-lg font-bold leading-none">{day}</div>
           </div>
 
-          {/* Category pill */}
           {e.category && (
             <div className="absolute right-3 top-3 rounded-full border border-white/15 bg-black/40 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur">
               {e.category}
@@ -110,12 +145,27 @@ export default function EventCard({ e }: { e: EventLite }) {
 
       <div className="flex items-center justify-between border-t border-white/10 px-4 py-3">
         <div className="text-xs text-zinc-500">One-click RSVP</div>
-        <button
-          onClick={onRSVP}
-          className="rounded-xl border border-white/15 bg-black/40 px-4 py-2 text-sm font-semibold text-white transition hover:bg-black/60 hover:border-white/25"
-        >
-          RSVP →
-        </button>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onToggleSave}
+            disabled={saving}
+            className={`rounded-xl border px-3 py-2 text-sm font-semibold transition
+              ${saved
+                ? "border-amber-400/30 bg-amber-500/10 text-amber-200 hover:bg-amber-500/15"
+                : "border-white/15 bg-black/40 text-white hover:bg-black/60 hover:border-white/25"
+              }`}
+          >
+            {saved ? "Saved ★" : "Save ☆"}
+          </button>
+
+          <button
+            onClick={onRSVP}
+            className="rounded-xl border border-white/15 bg-black/40 px-4 py-2 text-sm font-semibold text-white transition hover:bg-black/60 hover:border-white/25"
+          >
+            RSVP →
+          </button>
+        </div>
       </div>
     </div>
   );

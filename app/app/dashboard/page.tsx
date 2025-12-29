@@ -1,8 +1,9 @@
-// app/(app)/dashboard/page.tsx
+// app/app/dashboard/page.tsx
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import DashboardCalendar from "@/components/DashboardCalendar";
 
 export const dynamic = "force-dynamic";
 
@@ -14,13 +15,11 @@ function fmt(d: Date) {
 }
 
 async function getUserContext(session: any) {
-  // Try to get id/role from session first (best)
   const sessionUser = session?.user ?? {};
   const sessionId = sessionUser?.id as string | undefined;
   const sessionEmail = sessionUser?.email as string | undefined;
-  const sessionRole = sessionUser?.role as string | undefined;
+  const sessionRole = (sessionUser as any)?.role as string | undefined;
 
-  // Fallback: look up DB user by email if session doesn't include id/role
   let dbUser:
     | { id: string; role: "MEMBER" | "ORGANIZER"; name: string | null; email: string | null }
     | null = null;
@@ -44,14 +43,13 @@ export default async function DashboardPage() {
   const session = await auth();
 
   if (!session?.user) {
-    redirect("/login?next=/dashboard");
+    redirect("/login?next=/app/dashboard");
   }
 
-  const { userId, role, name, email } = await getUserContext(session);
+  const { userId, role, name } = await getUserContext(session);
 
   if (!userId) {
-    // session exists but we cannot map it to a DB user
-    redirect("/login?next=/dashboard");
+    redirect("/login?next=/app/dashboard");
   }
 
   const now = new Date();
@@ -96,7 +94,7 @@ export default async function DashboardPage() {
 
   async function signOutAction() {
     "use server";
-    await signOut({ redirectTo: "/login" });
+    await signOut({ redirectTo: "/" });
   }
 
   const isOrganizer = role === "ORGANIZER";
@@ -108,17 +106,24 @@ export default async function DashboardPage() {
           <h1 className="text-3xl font-semibold text-white">Dashboard</h1>
           <p className="mt-2 text-sm text-zinc-400">
             Welcome{name ? `, ${name}` : ""}. •{" "}
-            <span className="text-zinc-200">{isOrganizer ? "Organizer" : "Member"}</span>
+            <span className="text-zinc-200">
+              {isOrganizer ? "Organizer" : "Member"}
+            </span>
           </p>
         </div>
       </div>
 
       <div className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* ✅ Calendar */}
+        <div className="lg:col-span-3">
+          <DashboardCalendar />
+        </div>
+
         {/* Upcoming events */}
         <section className="rounded-2xl border border-white/10 bg-white/5 p-6 lg:col-span-2">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-white">Upcoming events</h2>
-            <Link className="text-sm text-zinc-200 hover:underline" href="/events">
+            <Link className="text-sm text-zinc-200 hover:underline" href="/public/events">
               View all
             </Link>
           </div>
@@ -131,7 +136,7 @@ export default async function DashboardPage() {
                 <li key={e.id} className="rounded-xl border border-white/10 bg-black/20 p-4">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <Link className="text-zinc-100 hover:underline" href={`/events/${e.slug}`}>
+                      <Link className="text-zinc-100 hover:underline" href={`/public/events/${e.slug}`}>
                         {e.title}
                       </Link>
                       <div className="mt-1 text-xs text-zinc-400">
@@ -155,14 +160,15 @@ export default async function DashboardPage() {
           <h2 className="text-lg font-semibold text-white">My RSVPs</h2>
 
           {myRsvps.length === 0 ? (
-            <p className="mt-4 text-sm text-zinc-400">
-              You haven’t RSVP’d to anything yet.
-            </p>
+            <p className="mt-4 text-sm text-zinc-400">You haven’t RSVP’d to anything yet.</p>
           ) : (
             <ul className="mt-4 space-y-3">
               {myRsvps.map((r) => (
-                <li key={`${r.event.slug}-${r.updatedAt.toISOString()}`} className="rounded-xl border border-white/10 bg-black/20 p-4">
-                  <Link className="text-zinc-100 hover:underline" href={`/events/${r.event.slug}`}>
+                <li
+                  key={`${r.event.slug}-${r.updatedAt.toISOString()}`}
+                  className="rounded-xl border border-white/10 bg-black/20 p-4"
+                >
+                  <Link className="text-zinc-100 hover:underline" href={`/public/events/${r.event.slug}`}>
                     {r.event.title}
                   </Link>
                   <div className="mt-1 text-xs text-zinc-400">
@@ -183,19 +189,15 @@ export default async function DashboardPage() {
         {/* Organizer: My events */}
         {isOrganizer ? (
           <section className="rounded-2xl border border-white/10 bg-white/5 p-6 lg:col-span-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-white">My events</h2>
-            </div>
+            <h2 className="text-lg font-semibold text-white">My events</h2>
 
             {myEvents.length === 0 ? (
-              <p className="mt-4 text-sm text-zinc-400">
-                You haven’t created any events yet.
-              </p>
+              <p className="mt-4 text-sm text-zinc-400">You haven’t created any events yet.</p>
             ) : (
               <ul className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                 {myEvents.map((e) => (
                   <li key={e.slug} className="rounded-xl border border-white/10 bg-black/20 p-4">
-                    <Link className="text-zinc-100 hover:underline" href={`/events/${e.slug}`}>
+                    <Link className="text-zinc-100 hover:underline" href={`/public/events/${e.slug}`}>
                       {e.title}
                     </Link>
                     <div className="mt-1 text-xs text-zinc-400">{fmt(e.startAt)}</div>

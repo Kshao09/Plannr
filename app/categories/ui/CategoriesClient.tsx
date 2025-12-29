@@ -118,7 +118,7 @@ export default function CategoriesClient() {
           ) : events.length ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {events.map((e) => {
-                const href = e.slug ? `/events/${e.slug}` : "/events";
+                const href = e.slug ? `/public/events/${e.slug}` : "/public/events";
                 const when = formatWhen(e.startAt);
                 const img = e.image ?? "/images/rooftop001.png";
 

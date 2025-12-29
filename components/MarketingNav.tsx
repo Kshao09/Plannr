@@ -21,7 +21,7 @@ export default async function MarketingNav() {
           {isLoggedIn ? (
             <>
               <Link
-                href="/events"
+                href="/public/events"
                 className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10 hover:border-white/25"
               >
                 Browse
@@ -34,14 +34,7 @@ export default async function MarketingNav() {
                 >
                   Create
                 </Link>
-              ) : (
-                <Link
-                  href="/dashboard"
-                  className="rounded-xl border border-white/15 bg-gradient-to-r from-fuchsia-500/25 via-indigo-500/15 to-cyan-500/20 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/25"
-                >
-                  Dashboard
-                </Link>
-              )}
+              ) : null}
 
               <form
                 action={async () => {

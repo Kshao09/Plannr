@@ -58,7 +58,7 @@ export default function DeleteButton({ slug }: { slug: string }) {
 
       toast.success("Event deleted");
       setOpen(false);
-      router.push("/events");
+      router.push("/public/events");
       router.refresh();
     } catch (err: any) {
       const msg = err?.message ?? "Network error.";

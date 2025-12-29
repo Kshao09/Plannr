@@ -65,7 +65,7 @@ export default async function EventDetailPage({
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="min-w-0">
           <Link
-            href="/events"
+            href="/public/events"
             className="inline-flex items-center gap-2 text-sm text-zinc-300 hover:text-white"
           >
             <span className="text-lg leading-none">←</span>

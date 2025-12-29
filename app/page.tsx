@@ -189,7 +189,7 @@ export default async function HomePage() {
 
               {/* Search bar */}
               <div className="mt-8 rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
-                <form className="grid gap-3 md:grid-cols-6" action="/events" method="GET">
+                <form className="grid gap-3 md:grid-cols-6" action="/public/events" method="GET">
                   <div className="md:col-span-3">
                     <input
                       name="q"
@@ -221,7 +221,7 @@ export default async function HomePage() {
                   {categories.map((c) => (
                     <Link
                       key={c.label}
-                      href={`/events?category=${encodeURIComponent(c.label)}`}
+                      href={`/public/events?category=${encodeURIComponent(c.label)}`}
                       className={`rounded-full border border-white/10 ${c.accent} px-3 py-1 text-xs text-zinc-100 hover:border-white/20`}
                     >
                       {c.label}
@@ -233,7 +233,7 @@ export default async function HomePage() {
               {/* CTAs */}
               <div className="mt-7 flex flex-wrap items-center gap-3">
                 <Link
-                  href="/events"
+                  href="/public/events"
                   className="rounded-xl border border-white/15 bg-white/5 px-5 py-3 font-semibold text-white transition hover:bg-white/10"
                 >
                   Browse events →
@@ -274,7 +274,7 @@ export default async function HomePage() {
                   return (
                     <Link
                       key={e.id}
-                      href={`/events/${e.slug}`}
+                      href={`/public/events/${e.slug}`}
                       className="group overflow-hidden rounded-2xl border border-white/10 bg-black/25 transition hover:bg-black/35 hover:border-white/20"
                     >
                       <div className="flex gap-4 p-4">
@@ -328,7 +328,7 @@ export default async function HomePage() {
 
               <div className="mt-4">
                 <Link
-                  href="/events"
+                  href="/public/events"
                   className="inline-flex items-center gap-2 text-sm font-semibold text-white/90 hover:text-white"
                 >
                   See all trending <span aria-hidden>→</span>

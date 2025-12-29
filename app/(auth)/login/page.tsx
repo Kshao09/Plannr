@@ -14,7 +14,7 @@ export default async function LoginPage({
 
   const nextRaw = sp?.next;
   const next =
-    typeof nextRaw === "string" && nextRaw.startsWith("/") ? nextRaw : "/dashboard";
+    typeof nextRaw === "string" && nextRaw.startsWith("/") ? nextRaw : "/app/dashboard";
 
   const error = typeof sp?.error === "string" ? sp.error : null;
 

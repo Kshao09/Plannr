@@ -73,7 +73,7 @@ export default function EditEventForm({ event }: { event: EventDTO }) {
 
       const updated = await res.json();
       toast.success("Event updated!");
-      router.push(`/events/${updated.slug}`);
+      router.push(`/public/events/${updated.slug}`);
       router.refresh();
     } catch (err: any) {
       toast.error(err?.message ?? "Network error.", "Update failed");
@@ -103,7 +103,7 @@ export default function EditEventForm({ event }: { event: EventDTO }) {
 
         <button
           type="button"
-          onClick={() => router.push(`/events/${event.slug}`)}
+          onClick={() => router.push(`/public/events/${event.slug}`)}
           className="w-auto rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-200 hover:bg-white/10"
           disabled={loading}
         >
@@ -199,7 +199,7 @@ export default function EditEventForm({ event }: { event: EventDTO }) {
           <div className="mt-6 flex items-center justify-end gap-3 border-t border-white/10 pt-4">
             <button
               type="button"
-              onClick={() => router.push(`/events/${event.slug}`)}
+              onClick={() => router.push(`/public/events/${event.slug}`)}
               className="w-auto rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-60"
               disabled={loading}
             >

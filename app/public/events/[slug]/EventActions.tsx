@@ -40,7 +40,7 @@ export default function EventActions({
       }
 
       toast.success("Event deleted!");
-      router.push("/events");
+      router.push("/public/events");
       router.refresh();
     } catch (err: any) {
       toast.error(err?.message ?? "Network error.", "Delete failed");
@@ -76,7 +76,7 @@ export default function EventActions({
         {canManage ? (
           <>
             <Link
-              href={`/events/${slug}/edit`}
+              href={`/public/events/${slug}/edit`}
               className={iconBtn}
               title="Edit"
               aria-label="Edit event"

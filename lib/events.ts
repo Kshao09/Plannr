@@ -10,10 +10,12 @@ export type EventsQuery = {
 
   range?: RangeKey;
   from?: string; // YYYY-MM-DD (custom)
-  to?: string;   // YYYY-MM-DD (custom)
+  to?: string; // YYYY-MM-DD (custom)
 
-  loc?: string[];      // filters Event.locationName
-  category?: string[]; // filters Event.category
+  // Accept either arrays (filters UI) or single strings (home search)
+  loc?: string[] | string;      // filters Event.locationName
+  city?: string[] | string;     // alias of loc
+  category?: string[] | string; // filters Event.category
 };
 
 function startOfDay(d: Date) {
@@ -27,7 +29,6 @@ function endOfDay(d: Date) {
   return x;
 }
 
-// Safer parse for YYYY-MM-DD (avoid UTC shifting)
 function parseLocalDateStart(ymd: string) {
   return new Date(`${ymd}T00:00:00`);
 }
@@ -35,10 +36,14 @@ function parseLocalDateEnd(ymd: string) {
   return new Date(`${ymd}T23:59:59.999`);
 }
 
+function toArray(v?: string[] | string) {
+  if (!v) return [];
+  return Array.isArray(v) ? v.filter(Boolean) : [v].filter(Boolean);
+}
+
 function computeDateWindow(input: Pick<EventsQuery, "range" | "from" | "to">) {
   const now = new Date();
 
-  // Custom overrides if provided
   if (input.from || input.to) {
     const from = input.from ? parseLocalDateStart(input.from) : undefined;
     const to = input.to ? parseLocalDateEnd(input.to) : undefined;
@@ -46,9 +51,8 @@ function computeDateWindow(input: Pick<EventsQuery, "range" | "from" | "to">) {
   }
 
   switch (input.range) {
-    case "today": {
+    case "today":
       return { from: startOfDay(now), to: endOfDay(now) };
-    }
     case "week": {
       const from = startOfDay(now);
       const to = endOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7));
@@ -59,10 +63,8 @@ function computeDateWindow(input: Pick<EventsQuery, "range" | "from" | "to">) {
       const to = endOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30));
       return { from, to };
     }
-    case "upcoming": {
-      // upcoming = startAt >= now
+    case "upcoming":
       return { from: now, to: undefined };
-    }
     case "all":
     default:
       return { from: undefined, to: undefined };
@@ -95,12 +97,15 @@ export async function getEvents(query: EventsQuery) {
     if (to) where.startAt.lte = to;
   }
 
-  if (query.loc?.length) {
-    where.locationName = { in: query.loc };
+  // city is an alias of loc (home search uses "city")
+  const locValues = toArray(query.loc).concat(toArray(query.city));
+  if (locValues.length) {
+    where.locationName = { in: Array.from(new Set(locValues)) };
   }
 
-  if (query.category?.length) {
-    where.category = { in: query.category };
+  const catValues = toArray(query.category);
+  if (catValues.length) {
+    where.category = { in: Array.from(new Set(catValues)) };
   }
 
   const [total, items] = await Promise.all([

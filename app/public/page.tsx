@@ -17,7 +17,7 @@ export default async function LandingPage() {
         <div className="mt-8 flex flex-wrap gap-3">
           {session ? (
             <Link
-              href="/dashboard"
+              href="/app/dashboard"
               className="rounded-xl bg-white px-5 py-3 font-medium text-black hover:opacity-90"
             >
               Go to dashboard
@@ -25,13 +25,13 @@ export default async function LandingPage() {
           ) : (
             <>
               <Link
-                href="/login"
+                href="/auth/login"
                 className="rounded-xl bg-white px-5 py-3 font-medium text-black hover:opacity-90"
               >
                 Log in
               </Link>
               <Link
-                href="/signup"
+                href="/auth/signup"
                 className="rounded-xl border border-white/15 bg-transparent px-5 py-3 font-medium text-white hover:bg-white/5"
               >
                 Sign up
@@ -40,7 +40,7 @@ export default async function LandingPage() {
           )}
 
           <Link
-            href="/events"
+            href="/public/events"
             className="rounded-xl border border-white/15 bg-transparent px-5 py-3 font-medium text-white hover:bg-white/5"
           >
             Browse events

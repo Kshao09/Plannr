@@ -8,10 +8,11 @@ export default auth((req) => {
 
   // Only protect these areas
   const isProtected =
-    pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/app/dashboard") ||
     pathname.startsWith("/create") ||
     pathname.startsWith("/organizer") ||
-    pathname.startsWith("/community");
+    pathname.startsWith("/community") ||
+    pathname.startsWith("/saved");
 
   if (isProtected && !isLoggedIn) {
     const loginUrl = new URL("/login", req.url);
@@ -22,12 +23,12 @@ export default auth((req) => {
   // Organizer-only areas
   const role = (req.auth?.user as any)?.role;
   if ((pathname.startsWith("/create") || pathname.startsWith("/organizer")) && role !== "ORGANIZER") {
-    return NextResponse.redirect(new URL("/dashboard", req.url));
+    return NextResponse.redirect(new URL("/app/dashboard", req.url));
   }
 
   return NextResponse.next();
 });
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/create/:path*", "/organizer/:path*", "/community/:path*"],
+  matcher: ["/app/dashboard/:path*", "/create/:path*", "/organizer/:path*", "/community/:path*", "/saved/:path*"],
 };

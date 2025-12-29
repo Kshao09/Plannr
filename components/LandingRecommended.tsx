@@ -215,7 +215,7 @@ export default function LandingRecommended({ fallbackCity = "Miami" }: { fallbac
 
       <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {events.slice(0, 4).map((e) => {
-          const href = e.slug ? `/events/${e.slug}` : "/login";
+          const href = e.slug ? `/public/events/${e.slug}` : "/login";
           const when = formatWhen(e.startAt);
           const img = e.image ?? "/images/ai001.png";
 

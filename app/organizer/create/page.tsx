@@ -51,7 +51,7 @@ export default function CreateEventPage() {
     }
 
     // Go straight to Events page
-    router.push("/events");
+    router.push("/public/events");
   }
 
   return (

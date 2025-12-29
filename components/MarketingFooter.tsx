@@ -23,7 +23,7 @@ export default function MarketingFooter() {
                 return (
                   <Link
                     key={t}
-                    href={`/events?category=${encodeURIComponent(cat)}`}
+                    href={`/public/events?category=${encodeURIComponent(cat)}`}
                     className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-200 transition hover:border-white/20 hover:bg-white/10"
                   >
                     {t}
@@ -40,7 +40,7 @@ export default function MarketingFooter() {
                 <div className="text-xs font-semibold uppercase tracking-wide text-zinc-300/90">
                   Product
                 </div>
-                <Link className="block text-zinc-400 hover:text-white" href="/events">
+                <Link className="block text-zinc-400 hover:text-white" href="/public/events">
                   Browse
                 </Link>
                 <Link className="block text-zinc-400 hover:text-white" href="/create">

@@ -44,7 +44,7 @@ export default async function EventsPage({
       <div className="mx-auto w-full max-w-4xl px-4 py-6">
         <div className="mb-4 flex items-center gap-3">
           <Link
-            href="/"
+            href="/app/dashboard"
             className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10"
           >
             ←
@@ -58,7 +58,7 @@ export default async function EventsPage({
           {data.items.map((e) => (
             <Link
               key={e.id}
-              href={`/events/${e.slug}`}
+              href={`/public/events/${e.slug}`}
               className="group flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-6 py-6 hover:bg-white/10"
             >
               <div className="min-w-0">

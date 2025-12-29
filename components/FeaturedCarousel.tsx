@@ -48,7 +48,7 @@ export default function FeaturedCarousel({
   title,
   subtitle,
   events,
-  viewAllHref = "/events",
+  viewAllHref = "/public/events",
 }: {
   title: string;
   subtitle?: string;
@@ -170,7 +170,7 @@ export default function FeaturedCarousel({
             return (
               <Link
                 key={e.id}
-                href={`/events/${e.slug}`}
+                href={`/public/events/${e.slug}`}
                 className="group relative w-[min(420px,86vw)] shrink-0 snap-start overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04]
                          shadow-[0_30px_80px_rgba(0,0,0,0.45)] transition hover:border-white/20 hover:bg-white/[0.06]"
               >

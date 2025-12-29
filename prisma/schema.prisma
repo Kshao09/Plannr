@@ -32,6 +32,8 @@ model User {
   events Event[] @relation("OrganizerEvents")
   rsvps  RSVP[]
 
+  savedEvents SavedEvent[]
+
   emailVerificationTokens EmailVerificationToken[]
   accounts                Account[]
   sessions                Session[]
@@ -56,6 +58,8 @@ model Event {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  savedBy SavedEvent[]
 
   rsvps RSVP[]
 
@@ -133,4 +137,18 @@ model VerificationToken {
 
   @@unique([identifier, token])
   @@index([expires])
+}
+
+model SavedEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  eventId   String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@index([userId])
+  @@index([eventId])
 }

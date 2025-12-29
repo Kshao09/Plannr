@@ -7,12 +7,12 @@ export type EventCard = {
   id: string;
   slug: string;
   title: string;
-  description: string;
+  description?: string | null;
   startAt: string; // ISO
   endAt: string; // ISO
-  locationName: string;
-  address: string;
-  organizerId: string; // needed for ownership checks if you use it elsewhere
+  locationName?: string | null;
+  address?: string | null;
+  organizerId: string;
 };
 
 function formatDateTime(iso: string) {
@@ -51,8 +51,6 @@ export default function EventList({
   events: EventCard[];
   viewerRole?: "ORGANIZER" | "MEMBER" | null;
 }) {
-
-  // session not used in modal anymore, but keeping import is fine if you’ll use later
   useSession();
 
   const [openId, setOpenId] = useState<string | null>(null);
@@ -63,7 +61,6 @@ export default function EventList({
     [events, openId]
   );
 
-  // Open/close dialog
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -72,7 +69,6 @@ export default function EventList({
     if (!selected && dialog.open) dialog.close();
   }, [selected]);
 
-  // Lock background scroll while modal is open
   useEffect(() => {
     const html = document.documentElement;
     const prevOverflow = html.style.overflow;
@@ -91,7 +87,6 @@ export default function EventList({
 
   return (
     <>
-      {/* Title-only list */}
       <div className="mt-4 space-y-4">
         {events.map((e) => (
           <button
@@ -111,7 +106,6 @@ export default function EventList({
         ))}
       </div>
 
-      {/* Modal */}
       <dialog
         ref={dialogRef}
         onClose={onClose}
@@ -133,24 +127,23 @@ export default function EventList({
               [&::-webkit-scrollbar]:hidden
             "
           >
-            {/* glow */}
             <div className="pointer-events-none absolute inset-0 rounded-3xl">
               <div className="absolute -top-20 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-indigo-500/20 blur-3xl" />
               <div className="absolute -bottom-24 right-10 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
             </div>
 
-            {/* content */}
             <div className="relative p-8">
-              {/* header */}
               <div className="mb-6">
                 <h2 className="text-3xl font-semibold tracking-tight text-white">
                   {selected.title}
                 </h2>
               </div>
 
-              {/* details */}
               <div className="mt-2 space-y-4">
-                <DetailInline label="Description" value={selected.description} />
+                <DetailInline
+                  label="Description"
+                  value={selected.description?.trim() ? selected.description : <span className="text-zinc-400">No description.</span>}
+                />
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <DetailInline
@@ -164,15 +157,20 @@ export default function EventList({
                     }
                   />
 
-                  <DetailInline label="Location" value={selected.locationName} />
+                  <DetailInline
+                    label="Location"
+                    value={selected.locationName?.trim() ? selected.locationName : <span className="text-zinc-400">TBA</span>}
+                  />
 
                   <div className="md:col-span-2">
-                    <DetailInline label="Address" value={selected.address} />
+                    <DetailInline
+                      label="Address"
+                      value={selected.address?.trim() ? selected.address : <span className="text-zinc-400">TBA</span>}
+                    />
                   </div>
                 </div>
               </div>
 
-              {/* bottom close */}
               <div className="mt-6">
                 <button
                   type="button"

@@ -17,7 +17,7 @@ export default function CreateEventPage() {
   const [address, setAddress] = useState("");
 
   function closeModal() {
-    router.push("/events");
+    router.push("/public/events");
   }
 
   useEffect(() => {
@@ -54,7 +54,7 @@ export default function CreateEventPage() {
       }
 
       toast.success("Event created!");
-      router.push("/events");
+      router.push("/public/events");
       router.refresh();
     } catch (err: any) {
       toast.error(err?.message ?? "Network error.", "Create failed");
