@@ -4,14 +4,14 @@ import { NextResponse } from "next/server";
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
-
   const isLoggedIn = !!req.auth;
 
   // Only protect these areas
   const isProtected =
     pathname.startsWith("/dashboard") ||
     pathname.startsWith("/create") ||
-    pathname.startsWith("/organizer");
+    pathname.startsWith("/organizer") ||
+    pathname.startsWith("/community");
 
   if (isProtected && !isLoggedIn) {
     const loginUrl = new URL("/login", req.url);
@@ -20,7 +20,7 @@ export default auth((req) => {
   }
 
   // Organizer-only areas
-  const role = req.auth?.user?.role;
+  const role = (req.auth?.user as any)?.role;
   if ((pathname.startsWith("/create") || pathname.startsWith("/organizer")) && role !== "ORGANIZER") {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
@@ -29,5 +29,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/create/:path*", "/organizer/:path*"],
+  matcher: ["/dashboard/:path*", "/create/:path*", "/organizer/:path*", "/community/:path*"],
 };

@@ -32,6 +32,8 @@ function pickImageForTitle(title: string) {
 
   if (t.includes("music") || t.includes("concert") || t.includes("band")) return IMG.concert;
   if (t.includes("art") || t.includes("gallery") || t.includes("exhibit")) return IMG.arts;
+
+  return IMG.rooftop;
 }
 
 function toneFromImage(src: string) {
@@ -61,7 +63,6 @@ const categories = [
 export default async function HomePage() {
   const now = new Date();
 
-  // Featured: upcoming events
   const featuredRaw = await prisma.event.findMany({
     where: { startAt: { gte: now } },
     orderBy: { startAt: "asc" },
@@ -77,7 +78,6 @@ export default async function HomePage() {
     },
   });
 
-  // Weekend: next Sat–Sun window
   const day = now.getDay(); // 0 Sun ... 6 Sat
   const daysUntilSat = (6 - day + 7) % 7;
   const sat = new Date(now);
@@ -118,7 +118,6 @@ export default async function HomePage() {
   const featured = featuredRaw.map(toLite);
   const weekend = weekendRaw.map(toLite);
 
-  // Hero “Trending near you”: use real data, fallback to curated
   const fallbackTrending = [
     {
       id: "t1",
@@ -161,7 +160,6 @@ export default async function HomePage() {
     <div className="relative min-h-screen w-full overflow-x-hidden bg-[#050711] text-white">
       <MarketingNav />
 
-      {/* background blobs */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute -left-40 top-[-120px] h-[380px] w-[520px] rounded-full bg-fuchsia-500/20 blur-[90px]" />
         <div className="absolute right-[-220px] top-[120px] h-[420px] w-[560px] rounded-full bg-cyan-500/15 blur-[90px]" />
@@ -169,10 +167,8 @@ export default async function HomePage() {
       </div>
 
       <main className="relative mx-auto w-full max-w-7xl px-6 pb-24 pt-8 md:px-10">
-        {/* HERO */}
         <section className="pt-6 md:pt-8">
           <div className="grid items-start gap-10 lg:grid-cols-2">
-            {/* Left */}
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-200">
                 <span className="h-1.5 w-1.5 rounded-full bg-cyan-300/80" />
@@ -193,9 +189,10 @@ export default async function HomePage() {
 
               {/* Search bar */}
               <div className="mt-8 rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
-                <div className="grid gap-3 md:grid-cols-6">
+                <form className="grid gap-3 md:grid-cols-6" action="/events" method="GET">
                   <div className="md:col-span-3">
                     <input
+                      name="q"
                       className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-400 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
                       placeholder="Search events (e.g., music, chess, tech)..."
                     />
@@ -203,6 +200,7 @@ export default async function HomePage() {
 
                   <div className="md:col-span-2">
                     <input
+                      name="city"
                       className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-400 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
                       placeholder="Miami"
                       defaultValue="Miami"
@@ -210,20 +208,20 @@ export default async function HomePage() {
                   </div>
 
                   <div className="md:col-span-1">
-                    <Link
-                      href="/login"
-                      className="flex h-full items-center justify-center rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm font-semibold text-white transition hover:bg-black/60 hover:border-white/25"
+                    <button
+                      type="submit"
+                      className="flex h-full w-full items-center justify-center rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm font-semibold text-white transition hover:bg-black/60 hover:border-white/25"
                     >
                       Search
-                    </Link>
+                    </button>
                   </div>
-                </div>
+                </form>
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   {categories.map((c) => (
                     <Link
                       key={c.label}
-                      href={`/categories?c=${encodeURIComponent(c.label)}`}
+                      href={`/events?category=${encodeURIComponent(c.label)}`}
                       className={`rounded-full border border-white/10 ${c.accent} px-3 py-1 text-xs text-zinc-100 hover:border-white/20`}
                     >
                       {c.label}
@@ -242,15 +240,18 @@ export default async function HomePage() {
                 </Link>
 
                 <Link
-                  href="/login"
+                  href="/create"
                   className="rounded-xl border border-white/15 bg-gradient-to-r from-fuchsia-500/25 via-indigo-500/15 to-cyan-500/20 px-5 py-3 font-semibold text-white transition hover:border-white/25"
                 >
                   Create an event
                 </Link>
 
-                <a href="/login" className="rounded-xl px-2 py-3 font-semibold text-zinc-300 hover:text-white">
+                <Link
+                  href="/how-it-works"
+                  className="rounded-xl px-2 py-3 font-semibold text-zinc-300 hover:text-white"
+                >
                   Learn more
-                </a>
+                </Link>
               </div>
             </div>
 
@@ -305,7 +306,6 @@ export default async function HomePage() {
                           <div className="mt-1 text-sm text-zinc-400">{meta}</div>
                           <div className="mt-1 text-xs text-zinc-500">By {e.organizerName ?? "Organizer"}</div>
 
-                          {/* Accent line */}
                           <div className="mt-3 h-[2px] w-full overflow-hidden rounded-full bg-white/10">
                             <div
                               className={`h-full w-2/5 rounded-full opacity-80 transition group-hover:w-3/5 ${
@@ -327,7 +327,10 @@ export default async function HomePage() {
               </div>
 
               <div className="mt-4">
-                <Link href="/events" className="inline-flex items-center gap-2 text-sm font-semibold text-white/90 hover:text-white">
+                <Link
+                  href="/events"
+                  className="inline-flex items-center gap-2 text-sm font-semibold text-white/90 hover:text-white"
+                >
                   See all trending <span aria-hidden>→</span>
                 </Link>
               </div>
@@ -335,7 +338,6 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* FEATURED CAROUSELS */}
         <FeaturedCarousel
           title="Featured collection"
           subtitle="Popular upcoming events curated from what’s trending."
@@ -351,10 +353,8 @@ export default async function HomePage() {
           events={weekend}
         />
 
-        {/* RECOMMENDED */}
         <LandingRecommended fallbackCity="Miami" />
 
-        {/* FOOTER */}
         <MarketingFooter />
       </main>
     </div>
