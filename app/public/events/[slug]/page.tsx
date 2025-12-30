@@ -2,8 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import EventActions from "./EventActions";
 import EventRSVP from "@/components/EventRSVP";
+import EventAttendees from "@/components/EventAttendees";
+import EventImageCarousel from "@/components/EventImageCarousel";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,37 @@ function formatDateTime(d: Date) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(d);
+}
+
+// Google Calendar needs UTC timestamps like: 20250101T130000Z
+function gcalDate(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    d.getUTCFullYear() +
+    pad(d.getUTCMonth() + 1) +
+    pad(d.getUTCDate()) +
+    "T" +
+    pad(d.getUTCHours()) +
+    pad(d.getUTCMinutes()) +
+    pad(d.getUTCSeconds()) +
+    "Z"
+  );
+}
+
+function buildGoogleCalendarUrl(e: {
+  title: string;
+  startAt: Date;
+  endAt: Date;
+  location?: string | null;
+  description?: string | null;
+}) {
+  const u = new URL("https://calendar.google.com/calendar/render");
+  u.searchParams.set("action", "TEMPLATE");
+  u.searchParams.set("text", e.title);
+  u.searchParams.set("dates", `${gcalDate(e.startAt)}/${gcalDate(e.endAt)}`);
+  if (e.location) u.searchParams.set("location", e.location);
+  if (e.description) u.searchParams.set("details", e.description);
+  return u.toString();
 }
 
 export default async function EventDetailPage({
@@ -42,6 +74,10 @@ export default async function EventDetailPage({
       address: true,
       organizerId: true,
       organizer: { select: { name: true } },
+
+      // ✅ add images support
+      image: true,
+      images: true,
     },
   });
 
@@ -58,6 +94,26 @@ export default async function EventDetailPage({
     });
     initialStatus = existing?.status ?? null;
   }
+
+  const locationForCalendar =
+    (event.address?.trim() ? event.address : null) ??
+    (event.locationName?.trim() ? event.locationName : null);
+
+  const gcalUrl = buildGoogleCalendarUrl({
+    title: event.title,
+    startAt: event.startAt,
+    endAt: event.endAt,
+    location: locationForCalendar,
+    description: event.description ?? null,
+  });
+
+  // ✅ Prefer uploaded images; fallback to cover image
+  const imagesToShow =
+    Array.isArray(event.images) && (event.images as string[]).length > 0
+      ? (event.images as string[])
+      : event.image
+      ? [event.image]
+      : [];
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10">
@@ -89,8 +145,32 @@ export default async function EventDetailPage({
           </div>
         </div>
 
-        <div className="shrink-0">
-          <EventActions slug={event.slug} canManage={canManage} />
+        {/* Top-right actions */}
+        <div className="shrink-0 flex flex-wrap items-center gap-2">
+          <a
+            href={`/api/events/${event.slug}/ics`}
+            className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/10"
+          >
+            Download .ics
+          </a>
+
+          <a
+            href={gcalUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/10"
+          >
+            Add to Google ↗
+          </a>
+
+          {canManage ? (
+            <Link
+              href={`/app/organizer/events/${event.slug}/edit`}
+              className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/10"
+            >
+              Edit
+            </Link>
+          ) : null}
         </div>
       </div>
 
@@ -125,12 +205,14 @@ export default async function EventDetailPage({
             </div>
           </div>
 
+          {/* ✅ Image carousel */}
+          <EventImageCarousel images={imagesToShow} title={event.title} />
+
           {/* ✅ RSVP */}
           {userId ? (
             <EventRSVP
               slug={event.slug}
               initialStatus={initialStatus}
-              // optional: block organizers from RSVPing
               disabled={role === "ORGANIZER" && userId === event.organizerId}
             />
           ) : (
@@ -138,6 +220,9 @@ export default async function EventDetailPage({
               Log in to RSVP.
             </div>
           )}
+
+          {/* ✅ Organizer-only attendee list + CSV */}
+          <EventAttendees eventId={event.id} slug={event.slug} canManage={canManage} />
 
           {/* Description */}
           <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-4 transition hover:bg-white/[0.08]">
@@ -149,7 +234,7 @@ export default async function EventDetailPage({
             </div>
           </div>
 
-          {/* Optional: map link */}
+          {/* Map link */}
           {event.address ? (
             <div className="flex flex-wrap items-center gap-3 pt-1">
               <a

@@ -52,6 +52,7 @@ model Event {
   // NEW
   category String?
   image    String?
+  images       String[] @default([]) // ✅ up to 5 stored here
 
   organizerId String
   organizer   User   @relation("OrganizerEvents", fields: [organizerId], references: [id])

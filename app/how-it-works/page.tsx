@@ -17,7 +17,7 @@ export default function HowItWorksPage() {
           <h2 className="text-lg font-semibold text-white">Create</h2>
           <p className="mt-2">Organizers can publish an event with title, time, location, and image.</p>
           <Link
-            href="/create"
+            href="../organizer/create"
             className="mt-4 inline-flex rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
           >
             Create an event →

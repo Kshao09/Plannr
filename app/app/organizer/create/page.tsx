@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ToastProvider";
 
-export default function CreateEventPage() {
+export default function OrganizerCreateEventPage() {
   const router = useRouter();
   const toast = useToast();
   const [loading, setLoading] = useState(false);
@@ -17,7 +17,7 @@ export default function CreateEventPage() {
   const [address, setAddress] = useState("");
 
   function closeModal() {
-    router.push("/public/events");
+    router.push("/app/organizer");
   }
 
   useEffect(() => {
@@ -54,7 +54,7 @@ export default function CreateEventPage() {
       }
 
       toast.success("Event created!");
-      router.push("/public/events");
+      router.push("/app/organizer");
       router.refresh();
     } catch (err: any) {
       toast.error(err?.message ?? "Network error.", "Create failed");
@@ -65,7 +65,7 @@ export default function CreateEventPage() {
 
   const labelCls = "text-xs font-medium text-zinc-200";
 
-  // Use `!` because your globals.css has input/textarea/button rules after Tailwind utilities.
+  // keep the ! overrides (your globals.css likely wins otherwise)
   const inputCls =
     "mt-1 w-full rounded-xl !bg-white px-3 py-2 text-sm !text-black !placeholder:text-zinc-500 " +
     "!border !border-zinc-300 outline-none focus:!border-zinc-500 focus:ring-2 focus:ring-black/10";
@@ -85,19 +85,26 @@ export default function CreateEventPage() {
       />
 
       {/* Modal */}
-      <div className="relative z-10 w-[min(860px,96vw)] max-w-none overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/80 shadow-2xl">
+      <div className="relative z-10 w-[min(720px,94vw)] overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/85 shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
           <div>
             <h1 className="text-lg font-semibold text-white">Create event</h1>
             <p className="mt-0.5 text-xs text-zinc-300">
-              Fill out the details below. Press{" "}
-              <span className="font-semibold">Esc</span> to close.
+              Organizer mode • Press <span className="font-semibold">Esc</span> to close.
             </p>
           </div>
+
+          <button
+            type="button"
+            onClick={closeModal}
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 hover:bg-white/10"
+          >
+            ✕
+          </button>
         </div>
 
-        {/* Body */}
+        {/* Body (scroll inside) */}
         <form onSubmit={onSubmit} className="max-h-[70vh] overflow-y-auto px-5 py-5">
           <div className="space-y-4">
             <div>
@@ -179,7 +186,7 @@ export default function CreateEventPage() {
             <button
               type="button"
               onClick={closeModal}
-              className="w-auto rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-60"
+              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-60"
               disabled={loading}
             >
               Cancel
@@ -188,7 +195,7 @@ export default function CreateEventPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-auto rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? "Creating..." : "Create"}
             </button>

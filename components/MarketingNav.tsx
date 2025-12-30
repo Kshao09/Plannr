@@ -29,12 +29,19 @@ export default async function MarketingNav() {
 
               {isOrganizer ? (
                 <Link
-                  href="/create"
+                  href="../organizer/create"
                   className="rounded-xl border border-white/15 bg-gradient-to-r from-fuchsia-500/25 via-indigo-500/15 to-cyan-500/20 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/25"
                 >
                   Create
                 </Link>
               ) : null}
+              
+              <Link
+                href="/app/saved"
+                className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10 hover:border-white/25"
+              >
+                Saved
+              </Link>
 
               <form
                 action={async () => {

@@ -240,7 +240,7 @@ export default async function HomePage() {
                 </Link>
 
                 <Link
-                  href="/create"
+                  href="../organizer/create"
                   className="rounded-xl border border-white/15 bg-gradient-to-r from-fuchsia-500/25 via-indigo-500/15 to-cyan-500/20 px-5 py-3 font-semibold text-white transition hover:border-white/25"
                 >
                   Create an event

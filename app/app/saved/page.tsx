@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import EventCard, { EventLite } from "@/components/EventCard";
+import EventCard from "@/components/EventCard";
+import type { EventLite } from "@/components/EventCard";
 
 export const dynamic = "force-dynamic";
 

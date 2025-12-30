@@ -43,7 +43,7 @@ export default function MarketingFooter() {
                 <Link className="block text-zinc-400 hover:text-white" href="/public/events">
                   Browse
                 </Link>
-                <Link className="block text-zinc-400 hover:text-white" href="/create">
+                <Link className="block text-zinc-400 hover:text-white" href="../organizer/create">
                   Create an event
                 </Link>
                 <Link className="block text-zinc-400 hover:text-white" href="/rsvp">

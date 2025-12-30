@@ -125,6 +125,7 @@ export async function getEvents(query: EventsQuery) {
         address: true,
         category: true,
         image: true,
+        organizer: { select: { name: true } }, // ✅ ADD THIS
       },
     }),
   ]);

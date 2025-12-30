@@ -1,8 +1,11 @@
-// app/(public)/events/page.tsx  (or app/events/page.tsx)
 import Link from "next/link";
+import { auth } from "@/auth";
+import { prisma } from "@/lib/prisma";
 import { getEventFilterOptions, getEvents } from "@/lib/events";
 import EventsFilters from "@/components/EventFilters";
 import Pagination from "@/components/Pagination";
+import EventCard from "@/components/EventCard";
+import type { EventLite } from "@/components/EventCard";
 
 export const dynamic = "force-dynamic";
 
@@ -14,19 +17,35 @@ function toArrayParam(v: string | string[] | undefined) {
   return v.split(",").filter(Boolean);
 }
 
+async function resolveUserId(session: any) {
+  const sessionUser = session?.user ?? {};
+  const sessionId = sessionUser?.id as string | undefined;
+  const sessionEmail = sessionUser?.email as string | undefined;
+
+  if (sessionId) return sessionId;
+
+  if (sessionEmail) {
+    const dbUser = await prisma.user.findUnique({
+      where: { email: sessionEmail },
+      select: { id: true },
+    });
+    return dbUser?.id ?? null;
+  }
+
+  return null;
+}
+
 export default async function EventsPage({
   searchParams,
 }: {
-  // ✅ works in Next 15 (Promise) AND Next 14 (plain object)
   searchParams: Promise<SP> | SP;
 }) {
-  const sp = await Promise.resolve(searchParams); // ✅ unwrap
+  const sp = await Promise.resolve(searchParams);
 
   const page = Number(sp.page ?? "1") || 1;
   const pageSize = Number(sp.pageSize ?? "8") || 8;
 
   const q = (sp.q as string) ?? "";
-
   const range = ((sp.range as string) ?? "upcoming") as any;
   const from = (sp.from as string) || undefined;
   const to = (sp.to as string) || undefined;
@@ -34,14 +53,44 @@ export default async function EventsPage({
   const loc = toArrayParam(sp.loc);
   const category = toArrayParam(sp.category);
 
+  const session = await auth();
+  const userId = session?.user ? await resolveUserId(session) : null;
+
   const [data, options] = await Promise.all([
     getEvents({ page, pageSize, q, range, from, to, loc, category }),
     getEventFilterOptions(),
   ]);
 
+  // Fetch saved IDs for just these events (if logged in)
+  const ids = data.items.map((x) => x.id);
+  const savedSet =
+    userId && ids.length
+      ? new Set(
+          (
+            await prisma.savedEvent.findMany({
+              where: { userId, eventId: { in: ids } },
+              select: { eventId: true },
+            })
+          ).map((r) => r.eventId)
+        )
+      : new Set<string>();
+
+  const cards: EventLite[] = data.items.map((e: any) => ({
+    id: e.id,
+    title: e.title,
+    slug: e.slug,
+    startAt: new Date(e.startAt).toISOString(),
+    endAt: e.endAt ? new Date(e.endAt).toISOString() : null,
+    locationName: e.locationName ?? null,
+    category: e.category ?? null,
+    image: e.image ?? null,
+    organizerName: e.organizer?.name ?? null,
+    isSaved: savedSet.has(e.id),
+  }));
+
   return (
     <div className="min-h-screen bg-black text-white">
-      <div className="mx-auto w-full max-w-4xl px-4 py-6">
+      <div className="mx-auto w-full max-w-6xl px-4 py-6">
         <div className="mb-4 flex items-center gap-3">
           <Link
             href="/app/dashboard"
@@ -54,38 +103,23 @@ export default async function EventsPage({
 
         <EventsFilters locations={options.locations} categories={options.categories} />
 
-        <div className="mt-5 space-y-4">
-          {data.items.map((e) => (
-            <Link
-              key={e.id}
-              href={`/public/events/${e.slug}`}
-              className="group flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-6 py-6 hover:bg-white/10"
-            >
-              <div className="min-w-0">
-                <div className="truncate text-xl font-semibold">{e.title}</div>
-                <div className="mt-1 text-sm text-white/60">
-                  {new Date(e.startAt).toLocaleString()}
-                  {e.locationName ? ` • ${e.locationName}` : ""}
-                  {e.category ? ` • ${e.category}` : ""}
-                </div>
-              </div>
-              <div className="shrink-0 text-white/60 transition group-hover:text-white">
-                View →
-              </div>
-            </Link>
-          ))}
+        {cards.length === 0 ? (
+          <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-6 text-white/70">
+            No events match your filters.
+          </div>
+        ) : (
+          <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {cards.map((e) => (
+              <EventCard key={e.id} e={e} />
+            ))}
+          </div>
+        )}
 
-          {data.items.length === 0 && (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-white/70">
-              No events match your filters.
-            </div>
-          )}
-        </div>
-
-        <Pagination page={data.page} totalPages={data.totalPages} />
-
-        <div className="mt-3 text-xs text-white/40">
-          Showing page {data.page} of {data.totalPages} • {data.total} results
+        <div className="mt-8">
+          <Pagination page={data.page} totalPages={data.totalPages} />
+          <div className="mt-3 text-xs text-white/40">
+            Showing page {data.page} of {data.totalPages} • {data.total} results
+          </div>
         </div>
       </div>
     </div>
