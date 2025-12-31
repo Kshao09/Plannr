@@ -15,7 +15,7 @@ export type EventLite = {
   organizerName?: string | null;
   category?: string | null;
   image?: string | null;
-  isSaved?: boolean; // ✅ NEW
+  isSaved?: boolean;
 };
 
 function formatDatePill(iso: string) {
@@ -42,7 +42,13 @@ function fallbackImage(category?: string | null) {
   return "/images/img003_v3.png";
 }
 
-export default function EventCard({ e }: { e: EventLite }) {
+export default function EventCard({
+  e,
+  showRemove = false, // ✅ NEW
+}: {
+  e: EventLite;
+  showRemove?: boolean;
+}) {
   const router = useRouter();
   const { data: session, status } = useSession();
 
@@ -55,7 +61,7 @@ export default function EventCard({ e }: { e: EventLite }) {
 
   async function onRSVP() {
     if (status !== "authenticated" || !session?.user) {
-      router.push("/public/events");
+      router.push("/login");
       return;
     }
     router.push(`/public/events/${e.slug}`);
@@ -70,7 +76,6 @@ export default function EventCard({ e }: { e: EventLite }) {
     if (saving) return;
     setSaving(true);
 
-    // optimistic
     const prev = saved;
     setSaved(!prev);
 
@@ -87,13 +92,24 @@ export default function EventCard({ e }: { e: EventLite }) {
       }
 
       const data = await res.json();
-      setSaved(!!data.saved);
+      const nowSaved = !!data.saved;
+      setSaved(nowSaved);
+
+      // ✅ if we're on the Saved page and user removed it, refresh list
+      if (showRemove && prev === true && nowSaved === false) {
+        router.refresh();
+      }
     } catch {
-      // revert if failed
       setSaved(prev);
     } finally {
       setSaving(false);
     }
+  }
+
+  // ✅ Remove button uses same toggle endpoint, but only acts when currently saved
+  async function onRemove() {
+    if (!saved) return;
+    await onToggleSave();
   }
 
   return (
@@ -109,9 +125,7 @@ export default function EventCard({ e }: { e: EventLite }) {
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
 
           <div className="absolute left-3 top-3 rounded-2xl border border-white/15 bg-black/40 px-3 py-2 text-center backdrop-blur">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-200">
-              {month}
-            </div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-200">{month}</div>
             <div className="text-lg font-bold leading-none">{day}</div>
           </div>
 
@@ -147,17 +161,29 @@ export default function EventCard({ e }: { e: EventLite }) {
         <div className="text-xs text-zinc-500">One-click RSVP</div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={onToggleSave}
-            disabled={saving}
-            className={`rounded-xl border px-3 py-2 text-sm font-semibold transition
-              ${saved
-                ? "border-amber-400/30 bg-amber-500/10 text-amber-200 hover:bg-amber-500/15"
-                : "border-white/15 bg-black/40 text-white hover:bg-black/60 hover:border-white/25"
-              }`}
-          >
-            {saved ? "Saved ★" : "Save ☆"}
-          </button>
+          {showRemove ? (
+            <button
+              onClick={onRemove}
+              disabled={saving || !saved}
+              className="rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/15 disabled:opacity-60"
+              title="Remove from saved"
+            >
+              Remove
+            </button>
+          ) : (
+            <button
+              onClick={onToggleSave}
+              disabled={saving}
+              className={`rounded-xl border px-3 py-2 text-sm font-semibold transition
+                ${
+                  saved
+                    ? "border-amber-400/30 bg-amber-500/10 text-amber-200 hover:bg-amber-500/15"
+                    : "border-white/15 bg-black/40 text-white hover:bg-black/60 hover:border-white/25"
+                }`}
+            >
+              {saved ? "Saved ★" : "Save ☆"}
+            </button>
+          )}
 
           <button
             onClick={onRSVP}

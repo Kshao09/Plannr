@@ -1,4 +1,3 @@
-// app/app/dashboard/page.tsx
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
@@ -54,7 +53,7 @@ export default async function DashboardPage() {
 
   const now = new Date();
 
-  const [upcomingEvents, myRsvps, myEvents] = await Promise.all([
+  const [upcomingEvents, myRsvps, myEvents, savedCount, savedPreview] = await Promise.all([
     prisma.event.findMany({
       where: { startAt: { gte: now } },
       orderBy: { startAt: "asc" },
@@ -90,6 +89,27 @@ export default async function DashboardPage() {
           select: { slug: true, title: true, startAt: true },
         })
       : Promise.resolve([]),
+
+    prisma.savedEvent.count({
+      where: { userId },
+    }),
+
+    prisma.savedEvent.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 4,
+      select: {
+        createdAt: true,
+        event: {
+          select: {
+            slug: true,
+            title: true,
+            startAt: true,
+            locationName: true,
+          },
+        },
+      },
+    }),
   ]);
 
   async function signOutAction() {
@@ -106,9 +126,7 @@ export default async function DashboardPage() {
           <h1 className="text-3xl font-semibold text-white">Dashboard</h1>
           <p className="mt-2 text-sm text-zinc-400">
             Welcome{name ? `, ${name}` : ""}. •{" "}
-            <span className="text-zinc-200">
-              {isOrganizer ? "Organizer" : "Member"}
-            </span>
+            <span className="text-zinc-200">{isOrganizer ? "Organizer" : "Member"}</span>
           </p>
         </div>
       </div>
@@ -179,6 +197,40 @@ export default async function DashboardPage() {
                     <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-zinc-200">
                       {r.status}
                     </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* ✅ My Saved Events (NEW) */}
+        <section className="rounded-2xl border border-white/10 bg-white/5 p-6 lg:col-span-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">My Saved Events</h2>
+              <p className="mt-1 text-xs text-zinc-400">Quick access to your bookmarks.</p>
+            </div>
+            <Link className="text-sm text-zinc-200 hover:underline" href="/app/saved">
+              View saved ({savedCount})
+            </Link>
+          </div>
+
+          {savedPreview.length === 0 ? (
+            <p className="mt-4 text-sm text-zinc-400">You haven’t saved any events yet.</p>
+          ) : (
+            <ul className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              {savedPreview.map((s) => (
+                <li
+                  key={`${s.event.slug}-${s.createdAt.toISOString()}`}
+                  className="rounded-xl border border-white/10 bg-black/20 p-4"
+                >
+                  <Link className="text-zinc-100 hover:underline" href={`/public/events/${s.event.slug}`}>
+                    {s.event.title}
+                  </Link>
+                  <div className="mt-1 text-xs text-zinc-400">
+                    {fmt(s.event.startAt)}
+                    {s.event.locationName ? ` • ${s.event.locationName}` : ""}
                   </div>
                 </li>
               ))}

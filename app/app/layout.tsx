@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { auth, signOut } from "@/auth";
+import OrganizerCreateLink from "@/components/OrganizerCreateLink";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -17,14 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               Events
             </Link>
 
-            {session?.user?.role === "ORGANIZER" ? (
-              <Link
-                href="../app/organizer/create"
-                className="rounded-xl border border-white/15 px-3 py-2 text-sm text-white hover:bg-white/5"
-              >
-                Create
-              </Link>
-            ) : null}
+            {session?.user?.role === "ORGANIZER" ? <OrganizerCreateLink /> : null}
 
             <form
               action={async () => {

@@ -16,13 +16,20 @@ type Row = {
 
 function formatWhen(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleString(undefined, { month: "short", day: "numeric", weekday: "short", hour: "numeric", minute: "2-digit" });
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 export default function CategoriesModal() {
   const router = useRouter();
   const sp = useSearchParams();
   const initial = sp.get("q") ?? "";
+
   const [q, setQ] = useState(initial);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,10 +48,18 @@ export default function CategoriesModal() {
   }, []);
 
   async function runSearch(nextQ: string) {
+    const cleaned = nextQ.trim();
+    if (!cleaned) {
+      setRows([]);
+      return;
+    }
+
     setLoading(true);
     try {
-      const res = await fetch(`/api/events?q=${encodeURIComponent(nextQ)}&take=12`, { cache: "no-store" });
-      const data = await res.json();
+      const res = await fetch(`/api/events?q=${encodeURIComponent(cleaned)}&take=12`, {
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => []);
       setRows(Array.isArray(data) ? data : []);
     } finally {
       setLoading(false);
@@ -69,7 +84,9 @@ export default function CategoriesModal() {
         <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
           <div>
             <div className="text-lg font-semibold text-white">Search events</div>
-            <div className="mt-0.5 text-xs text-zinc-400">Type keywords (rock, food, AI, chess...) and press Enter.</div>
+            <div className="mt-0.5 text-xs text-zinc-400">
+              Type keywords (rock, food, AI, chess...) and press Enter.
+            </div>
           </div>
 
           <button
@@ -84,7 +101,7 @@ export default function CategoriesModal() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              runSearch(q.trim());
+              runSearch(q);
             }}
             className="flex flex-col gap-2 md:flex-row md:items-center"
           >
@@ -106,7 +123,7 @@ export default function CategoriesModal() {
             {rows.map((e) => (
               <Link
                 key={e.id}
-                href={`/events/${e.slug}`}
+                href={`/public/events/${e.slug}`}   // ✅ FIXED
                 className="group overflow-hidden rounded-3xl border border-white/10 bg-white/5 transition hover:border-white/20 hover:bg-white/10"
               >
                 <div className="relative h-36 w-full">
@@ -121,7 +138,7 @@ export default function CategoriesModal() {
                 </div>
 
                 <div className="p-4">
-                  <div className="font-semibold line-clamp-2">{e.title}</div>
+                  <div className="font-semibold line-clamp-2 text-white">{e.title}</div>
                   <div className="mt-2 text-sm text-zinc-400">
                     {formatWhen(e.startAt)}
                     {e.locationName ? ` • ${e.locationName}` : ""}
@@ -133,8 +150,9 @@ export default function CategoriesModal() {
 
           {!loading && rows.length === 0 ? (
             <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-zinc-300">
-              No results yet. Try: <span className="text-white">rock</span>, <span className="text-white">food</span>,{" "}
-              <span className="text-white">AI</span>, <span className="text-white">chess</span>.
+              No results yet. Try: <span className="text-white">rock</span>,{" "}
+              <span className="text-white">food</span>, <span className="text-white">AI</span>,{" "}
+              <span className="text-white">chess</span>.
             </div>
           ) : null}
         </div>
