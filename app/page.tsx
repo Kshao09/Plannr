@@ -6,6 +6,8 @@ import FeaturedCarousel, { CarouselEvent } from "@/components/FeaturedCarousel";
 import MarketingFooter from "@/components/MarketingFooter";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 const IMG = {
   ai: "/images/ai001.png",
   basketball: "/images/basketball001.png",
