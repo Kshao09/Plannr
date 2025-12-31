@@ -1,15 +1,16 @@
 // lib/mailer.ts
 import nodemailer from "nodemailer";
+import { getAppUrl } from "@/lib/appUrl";
 
 type SendResult = { sent: boolean; verifyUrl: string };
 
 function buildVerifyUrl(token: string) {
-  const appUrl =
-    process.env.APP_URL ||
-    process.env.NEXTAUTH_URL ||
-    "http://localhost:3000";
+  const base = getAppUrl();
 
-  return `${appUrl}/verify-email?token=${encodeURIComponent(token)}`;
+  const url = new URL("/verify-email", base);
+  url.searchParams.set("token", token);
+
+  return url.toString();
 }
 
 function getTransporter() {
@@ -17,7 +18,7 @@ function getTransporter() {
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
 
-  // If you haven't configured SMTP yet, return null (dev-friendly).
+  // Dev-friendly: allow app to run without SMTP configured
   if (!host || !user || !pass) return null;
 
   return nodemailer.createTransport({
@@ -36,7 +37,6 @@ export async function sendVerificationEmail({
   token: string;
 }): Promise<SendResult> {
   const verifyUrl = buildVerifyUrl(token);
-
   const transporter = getTransporter();
 
   // ✅ Dev fallback: no SMTP configured
