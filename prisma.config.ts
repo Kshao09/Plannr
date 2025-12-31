@@ -2,13 +2,16 @@
 import { defineConfig } from "prisma/config";
 import { config as dotenv } from "dotenv";
 
-dotenv({ path: ".env.local" });
 dotenv({ path: ".env" });
+dotenv({ path: ".env.local", override: true });
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
-  migrations: { path: "prisma/migrations" },
+  migrations: {
+    path: "prisma/migrations",
+    seed: "npx tsx prisma/seed.ts", // ✅ add this
+  },
   datasource: {
-    url: process.env.PRISMA_DATABASE_URL ?? process.env.DATABASE_URL!,
+    url: process.env.DATABASE_URL!,
   },
 });
