@@ -55,7 +55,7 @@ export default function EventCard({ e }: { e: EventLite }) {
 
   async function onRSVP() {
     if (status !== "authenticated" || !session?.user) {
-      router.push("/login");
+      router.push("/public/events");
       return;
     }
     router.push(`/public/events/${e.slug}`);

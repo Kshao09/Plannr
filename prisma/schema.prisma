@@ -19,6 +19,11 @@ enum RSVPStatus {
   DECLINED
 }
 
+enum AttendanceState {
+  CONFIRMED
+  WAITLISTED
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String?
@@ -49,20 +54,22 @@ model Event {
   locationName String?
   address      String?
 
-  // NEW
   category String?
   image    String?
-  images       String[] @default([]) // ✅ up to 5 stored here
+  images   String[] @default([]) // ✅ up to 5 stored here
 
   organizerId String
   organizer   User   @relation("OrganizerEvents", fields: [organizerId], references: [id])
+
+  capacity        Int?
+  waitlistEnabled Boolean  @default(true)
+  checkInSecret   String   @default(cuid()) // staff link secret
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   savedBy SavedEvent[]
-
-  rsvps RSVP[]
+  rsvps    RSVP[]
 
   @@index([startAt])
   @@index([locationName])
@@ -72,6 +79,13 @@ model Event {
 model RSVP {
   id     String     @id @default(cuid())
   status RSVPStatus @default(GOING)
+
+  // ✅ NEW: waitlist + check-in + reminders
+  attendanceState   AttendanceState @default(CONFIRMED)
+  checkInCode       String          @unique @default(cuid())
+  checkedInAt       DateTime?
+  reminder24hSentAt DateTime?
+  reminder1hSentAt  DateTime?
 
   userId  String
   eventId String
@@ -85,6 +99,9 @@ model RSVP {
   @@unique([userId, eventId])
   @@index([userId])
   @@index([eventId])
+
+  // helpful for capacity + waitlist queries
+  @@index([eventId, status, attendanceState, createdAt])
 }
 
 model EmailVerificationToken {

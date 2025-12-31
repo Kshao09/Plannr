@@ -53,7 +53,7 @@ export default function EventSearch() {
       />
 
       {isOrganizer && (
-        <Link href="../organizer/create" className={createBtnCls}>
+        <Link href="../app/organizer/create" className={createBtnCls}>
           Create Event
         </Link>
       )}

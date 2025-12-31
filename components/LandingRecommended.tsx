@@ -43,7 +43,7 @@ const FALLBACK: EventLite[] = [
     startAt: "2025-12-31T15:24:00-05:00",
     locationName: "Hollow Park",
     organizerName: "Plannr Picks",
-    image: "/images/rock001.png",
+    image: "/images/rockConcert001.png",
   },
   {
     id: "f4",
