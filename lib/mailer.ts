@@ -1,78 +1,19 @@
 // lib/mailer.ts
-import nodemailer from "nodemailer";
+import { sendEmail as sendResendEmail } from "@/lib/email";
+import type { SendEmailArgs, SendEmailResult } from "@/lib/email";
 
-type SendEmailArgs = {
-  to: string;
-  subject: string;
-  html: string;
-  text?: string;
-  replyTo?: string;
-};
-
-export type SendEmailResult = {
-  sent: boolean;            // ✅ what your auth flow expects
-  skipped: boolean;         // true when SMTP not configured
-  messageId?: string;
-  error?: string;
-};
-
-let cachedTransporter: nodemailer.Transporter | null = null;
-
-function getTransporter() {
-  if (cachedTransporter) return cachedTransporter;
-
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT ?? "587");
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-
-  if (!host || !user || !pass) {
-    console.warn(
-      "[mailer] SMTP not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS. Emails will be skipped."
-    );
-    return null;
-  }
-
-  const secure = port === 465; // 465 = SSL, 587 = STARTTLS
-
-  cachedTransporter = nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: { user, pass },
-    ...(secure ? {} : { requireTLS: true }),
-  });
-
-  return cachedTransporter;
-}
+export type { SendEmailArgs, SendEmailResult };
 
 export function getFromAddress() {
-  return process.env.EMAIL_FROM || process.env.SMTP_FROM || "Plannr <no-reply@plannr.local>";
+  const app = process.env.APP_NAME || "Plannr";
+  return process.env.EMAIL_FROM || `${app} <onboarding@resend.dev>`;
 }
 
-export async function sendEmail({ to, subject, html, text, replyTo }: SendEmailArgs): Promise<SendEmailResult> {
-  const transporter = getTransporter();
-  if (!transporter) {
-    // ✅ keep auth flow happy
-    return { sent: false, skipped: true };
-  }
-
-  const from = getFromAddress();
-
-  try {
-    const info = await transporter.sendMail({
-      from,
-      to,
-      subject,
-      html,
-      text,
-      replyTo,
-    });
-
-    return { sent: true, skipped: false, messageId: String(info.messageId ?? "") };
-  } catch (e: any) {
-    return { sent: false, skipped: false, error: e?.message ?? "Email send failed" };
-  }
+export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
+  return sendResendEmail({
+    ...args,
+    from: args.from ?? getFromAddress(),
+  });
 }
 
 /**
@@ -110,7 +51,7 @@ export async function sendVerificationEmail(a: any, b?: any, c?: any): Promise<S
   }
 
   if (!to) {
-    return { sent: false, skipped: false, error: "sendVerificationEmail: missing recipient email" };
+    return { sent: false, skipped: false, provider: "resend", error: "sendVerificationEmail: missing recipient email" };
   }
 
   appName = appName || process.env.APP_NAME || "Plannr";

@@ -4,7 +4,7 @@ import { sendEmail } from "@/lib/mailer";
 type RSVPStatus = "GOING" | "MAYBE" | "DECLINED";
 type AttendanceState = "CONFIRMED" | "WAITLISTED";
 
-type Change = { field: "title" | "time" | "location"; from: string; to: string };
+type Change = { field: "time" | "location" | "capacity" | "waitlistEnabled"; from: string; to: string };
 
 function esc(s: string) {
   return String(s ?? "")
@@ -175,7 +175,12 @@ export async function emailEventUpdated(args: {
 
   const changeLines = args.changes
     .map((c) => {
-      const label = c.field === "title" ? "Title" : c.field === "location" ? "Location" : "Time";
+      const label =
+      c.field === "location" ? "Location" :
+      c.field === "time" ? "Time" :
+      c.field === "capacity" ? "Capacity" :
+      "Waitlist";
+
       return `<li><b>${label}</b><br/>From: ${esc(c.from || "(empty)")}<br/>To: ${esc(c.to || "(empty)")}</li>`;
     })
     .join("");

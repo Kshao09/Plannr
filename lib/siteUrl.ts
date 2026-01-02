@@ -1,72 +1,46 @@
 // lib/siteUrl.ts
-import "server-only";
 import { headers } from "next/headers";
 
-function pickFirst(v: string | null | undefined) {
-  if (!v) return "";
-  // Vercel can send comma-separated forwarded headers
-  return v.split(",")[0]?.trim() ?? "";
+function pickFirst(v: string | null) {
+  if (!v) return null;
+  // forwarded headers can be "https, http" etc.
+  return v.split(",")[0]?.trim() || null;
 }
 
 function normalizeOrigin(origin: string) {
-  const o = String(origin ?? "").trim().replace(/\/+$/, "");
-  if (!o) return "";
-  if (/^https?:\/\//i.test(o)) return o;
-  // Allow env like "myapp.vercel.app" (no protocol)
-  return `https://${o}`;
+  // remove trailing slash
+  return origin.replace(/\/+$/, "");
 }
 
-export function getBaseUrl() {
-  // Prefer explicit env when present
-  const env =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.NEXTAUTH_URL ||
-    process.env.APP_URL ||
-    "";
-
-  const normalizedEnv = normalizeOrigin(env);
-  if (normalizedEnv) return normalizedEnv;
-
-  // Infer from request headers (Vercel/server)
-  try {
-    const h = headers();
-
-    const proto = pickFirst(h.get("x-forwarded-proto")) || "https";
-    const host = pickFirst(h.get("x-forwarded-host")) || pickFirst(h.get("host"));
-
-    if (host) return normalizeOrigin(`${proto}://${host}`);
-  } catch {
-    // ignore
-  }
-
-  // Vercel fallback
-  const vercel = pickFirst(process.env.VERCEL_URL);
-  if (vercel) return normalizeOrigin(`https://${vercel}`);
-
-  // Local fallback
-  return "http://localhost:3000";
+export async function absoluteUrl(path: string): Promise<string> {
+  const base = await getBaseUrl();
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return `${base}${p}`;
 }
 
-export function getBaseUrlFromRequest(req: Request) {
-  const proto = pickFirst(req.headers.get("x-forwarded-proto")) || "https";
-  const host =
-    pickFirst(req.headers.get("x-forwarded-host")) || pickFirst(req.headers.get("host"));
+/**
+ * Works in Server Components / Route Handlers.
+ * Next.js (newer) returns headers() as Promise<ReadonlyHeaders>.
+ */
+export async function getBaseUrl(): Promise<string> {
+  const h = await headers();
+
+  const proto = pickFirst(h.get("x-forwarded-proto")) || "https";
+  const host = pickFirst(h.get("x-forwarded-host")) || pickFirst(h.get("host"));
 
   if (host) return normalizeOrigin(`${proto}://${host}`);
 
-  return getBaseUrl();
+  // fallback for local dev
+  return "http://localhost:3000";
 }
 
-export function absoluteUrl(pathOrUrl: string, base = getBaseUrl()) {
-  const v = String(pathOrUrl ?? "").trim();
-  if (!v) return base;
-  if (/^https?:\/\//i.test(v)) return v;
-
-  const p = v.startsWith("/") ? v : `/${v}`;
-
-  try {
-    return new URL(p, base).toString();
-  } catch {
-    return `${base}${p}`;
-  }
+/**
+ * Use this when you already have a Request object (route handlers).
+ * No Next headers() usage needed.
+ */
+export function getBaseUrlFromRequest(req: Request): string {
+  const h = req.headers;
+  const proto = pickFirst(h.get("x-forwarded-proto")) || "http";
+  const host = pickFirst(h.get("x-forwarded-host")) || pickFirst(h.get("host")) || "localhost:3000";
+  return normalizeOrigin(`${proto}://${host}`);
 }

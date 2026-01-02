@@ -98,6 +98,10 @@ export default async function LoginPage({
           </button>
         </form>
 
+        <Link href="/reset-password" className="text-sm underline opacity-80 hover:opacity-100">
+          Forgot password?
+        </Link>
+
         <p className="mt-4 text-sm text-zinc-400">
           Don&apos;t have an account?{" "}
           <Link className="text-zinc-200 hover:underline" href="/signup">

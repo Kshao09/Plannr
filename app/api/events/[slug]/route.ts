@@ -33,7 +33,6 @@ function has(obj: any, key: string) {
 }
 
 function getBaseUrlFromRequest(req: Request) {
-  // Works on Vercel and locally
   const h = new Headers(req.headers);
   const proto = h.get("x-forwarded-proto") ?? "http";
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
@@ -44,19 +43,16 @@ function isValidDate(d: any) {
   return d instanceof Date && !Number.isNaN(d.getTime());
 }
 
-function asTrimmedString(v: any) {
-  return String(v ?? "").trim();
-}
-
 type EventSnapshot = {
-  title: string;
   startAt: Date | null;
   endAt: Date | null;
   locationName: string | null;
   address: string | null;
+  capacity: number | null;
+  waitlistEnabled: boolean;
 };
 
-type Change = { field: "title" | "time" | "location"; from: string; to: string };
+type Change = { field: "time" | "location" | "capacity" | "waitlistEnabled"; from: string; to: string };
 
 function fmtIsoOrEmpty(d: Date | null) {
   return d ? d.toISOString() : "";
@@ -71,19 +67,21 @@ function buildLocation(locName: string | null, addr: string | null) {
   return "";
 }
 
+function fmtCap(v: number | null) {
+  return v === null ? "(no limit)" : String(v);
+}
+
 function diffEvent(before: EventSnapshot, after: EventSnapshot): Change[] {
   const changes: Change[] = [];
 
-  if ((before.title ?? "") !== (after.title ?? "")) {
-    changes.push({ field: "title", from: before.title ?? "", to: after.title ?? "" });
-  }
-
+  // location
   const beforeLoc = buildLocation(before.locationName, before.address);
   const afterLoc = buildLocation(after.locationName, after.address);
   if (beforeLoc !== afterLoc) {
-    changes.push({ field: "location", from: beforeLoc, to: afterLoc });
+    changes.push({ field: "location", from: beforeLoc || "(empty)", to: afterLoc || "(empty)" });
   }
 
+  // time
   const beforeStart = fmtIsoOrEmpty(before.startAt);
   const afterStart = fmtIsoOrEmpty(after.startAt);
   const beforeEnd = fmtIsoOrEmpty(before.endAt);
@@ -96,21 +94,39 @@ function diffEvent(before: EventSnapshot, after: EventSnapshot): Change[] {
     });
   }
 
+  // capacity
+  if ((before.capacity ?? null) !== (after.capacity ?? null)) {
+    changes.push({ field: "capacity", from: fmtCap(before.capacity), to: fmtCap(after.capacity) });
+  }
+
+  // waitlistEnabled
+  if (before.waitlistEnabled !== after.waitlistEnabled) {
+    changes.push({
+      field: "waitlistEnabled",
+      from: before.waitlistEnabled ? "Enabled" : "Disabled",
+      to: after.waitlistEnabled ? "Enabled" : "Disabled",
+    });
+  }
+
   return changes;
 }
 
 async function getRsvpRecipients(eventId: string) {
-  // Excludes DECLINED; adjust if you want to notify declined too
+  // ✅ Only GOING and MAYBE
   const rows = await prisma.rSVP.findMany({
-    where: { eventId, status: { not: "DECLINED" } },
+    where: {
+      eventId,
+      status: { in: ["GOING", "MAYBE"] },
+    },
     select: { user: { select: { email: true, name: true } } },
   });
 
   const map = new Map<string, { email: string; name?: string | null }>();
   for (const r of rows) {
-    const email = r.user?.email?.toLowerCase().trim();
-    if (!email) continue;
-    if (!map.has(email)) map.set(email, { email, name: r.user?.name ?? null });
+    const raw = r.user?.email?.trim();
+    if (!raw) continue;
+    const key = raw.toLowerCase();
+    if (!map.has(key)) map.set(key, { email: raw, name: r.user?.name ?? null });
   }
 
   return [...map.values()];
@@ -139,6 +155,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
       endAt: true,
       locationName: true,
       address: true,
+      capacity: true,
+      waitlistEnabled: true,
     },
   });
 
@@ -146,24 +164,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
   if (event.organizerId !== userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const before: EventSnapshot = {
-    title: event.title,
     startAt: event.startAt,
     endAt: event.endAt,
     locationName: event.locationName,
     address: event.address,
+    capacity: event.capacity,
+    waitlistEnabled: event.waitlistEnabled,
   };
 
-  // ✅ Build update object WITHOUT wiping fields.
-  // If a key is not present, we leave it unchanged (use undefined, not null).
+  // Build update object WITHOUT wiping fields.
   const data: any = {};
 
-  if (has(body, "title")) data.title = asTrimmedString(body.title);
+  if (has(body, "title")) data.title = String(body.title ?? "").trim();
   if (has(body, "description")) data.description = body.description ? String(body.description) : null;
 
   if (has(body, "startAt")) {
-    if (!body.startAt) {
-      data.startAt = undefined;
-    } else {
+    if (!body.startAt) data.startAt = undefined;
+    else {
       const d = new Date(body.startAt);
       if (!isValidDate(d)) return NextResponse.json({ error: "Invalid startAt" }, { status: 400 });
       data.startAt = d;
@@ -171,9 +188,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
   }
 
   if (has(body, "endAt")) {
-    if (!body.endAt) {
-      data.endAt = undefined;
-    } else {
+    if (!body.endAt) data.endAt = undefined;
+    else {
       const d = new Date(body.endAt);
       if (!isValidDate(d)) return NextResponse.json({ error: "Invalid endAt" }, { status: 400 });
       data.endAt = d;
@@ -196,10 +212,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
 
   if (has(body, "waitlistEnabled")) data.waitlistEnabled = !!body.waitlistEnabled;
 
-  // 🚫 IMPORTANT: do NOT set image/images here unless you are intentionally updating them.
-  // data.image = ...
-  // data.images = ...
-
   const updated = await prisma.event.update({
     where: { id: event.id },
     data,
@@ -211,24 +223,27 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
       endAt: true,
       locationName: true,
       address: true,
+      capacity: true,
+      waitlistEnabled: true,
     },
   });
 
   const after: EventSnapshot = {
-    title: updated.title,
     startAt: updated.startAt,
     endAt: updated.endAt,
     locationName: updated.locationName,
     address: updated.address,
+    capacity: updated.capacity,
+    waitlistEnabled: updated.waitlistEnabled,
   };
 
+  // ✅ Only email if one of: time/location/capacity/waitlistEnabled changed
   const changes = diffEvent(before, after);
   if (changes.length > 0) {
     const baseUrl = getBaseUrlFromRequest(req);
     const eventUrl = `${baseUrl}/public/events/${updated.slug}`;
     const recipients = await getRsvpRecipients(event.id);
 
-    // Send emails best-effort (don’t block the edit if mail fails)
     try {
       await Promise.allSettled(
         recipients.map((r) =>
@@ -286,7 +301,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ slug:
   const baseUrl = getBaseUrlFromRequest(req);
   const listUrl = `${baseUrl}/public/events`;
 
-  // Notify RSVP users first (best effort), then delete.
+  // ✅ Only notify GOING + MAYBE
   const recipients = await getRsvpRecipients(event.id);
   if (recipients.length > 0) {
     try {

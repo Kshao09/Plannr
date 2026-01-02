@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { getBaseUrl, absoluteUrl } from "@/lib/siteUrl";
+import { absoluteUrl } from "@/lib/siteUrl";
 import CheckInClient from "./CheckInClient";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,8 @@ export default async function OrganizerCheckInPage({
       title: true,
       startAt: true,
       endAt: true,
-      location: true,
+      locationName: true,
+      address: true,
       organizerId: true,
       checkInSecret: true,
       rsvps: {
@@ -38,7 +39,9 @@ export default async function OrganizerCheckInPage({
           status: true,
           checkedInAt: true,
           createdAt: true,
-          user: { select: { id: true, name: true, email: true } },
+          user: {
+            select: { id: true, name: true, email: true },
+          },
         },
       },
     },
@@ -47,11 +50,10 @@ export default async function OrganizerCheckInPage({
   if (!event) notFound();
   if (event.organizerId !== viewerId) redirect("/organizer");
 
-  const base = getBaseUrl();
-  const shareUrl = absoluteUrl(`/public/events/${encodeURIComponent(event.slug)}`, base);
-  const staffUrl = absoluteUrl(
-    `/checkin/${encodeURIComponent(event.slug)}?secret=${encodeURIComponent(event.checkInSecret)}`,
-    base
+  // absoluteUrl now builds base internally (awaits headers())
+  const shareUrl = await absoluteUrl(`/public/events/${encodeURIComponent(event.slug)}`);
+  const staffUrl = await absoluteUrl(
+    `/checkin/${encodeURIComponent(event.slug)}?secret=${encodeURIComponent(event.checkInSecret)}`
   );
 
   return (

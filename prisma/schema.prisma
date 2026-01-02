@@ -5,7 +5,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
 }
 
 enum Role {
@@ -37,7 +37,8 @@ model User {
   events Event[] @relation("OrganizerEvents")
   rsvps  RSVP[]
 
-  savedEvents SavedEvent[]
+  savedEvents         SavedEvent[]
+  passwordResetTokens PasswordResetToken[]
 
   emailVerificationTokens EmailVerificationToken[]
   accounts                Account[]
@@ -62,18 +63,32 @@ model Event {
   organizer   User   @relation("OrganizerEvents", fields: [organizerId], references: [id])
 
   capacity        Int?
-  waitlistEnabled Boolean  @default(true)
-  checkInSecret   String   @default(cuid()) // staff link secret
+  waitlistEnabled Boolean @default(true)
+  checkInSecret   String  @default(cuid()) // staff link secret
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   savedBy SavedEvent[]
-  rsvps    RSVP[]
+  rsvps   RSVP[]
 
   @@index([startAt])
   @@index([locationName])
   @@index([category])
+}
+
+model PasswordResetToken {
+  id        String @id @default(cuid())
+  tokenHash String @unique
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model RSVP {
@@ -99,7 +114,6 @@ model RSVP {
   @@unique([userId, eventId])
   @@index([userId])
   @@index([eventId])
-
   // helpful for capacity + waitlist queries
   @@index([eventId, status, attendanceState, createdAt])
 }
