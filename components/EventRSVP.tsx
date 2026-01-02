@@ -1,11 +1,173 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ToastProvider";
 
 type RSVPStatus = "GOING" | "MAYBE" | "DECLINED" | null;
 type AttendanceState = "CONFIRMED" | "WAITLISTED" | null;
+
+type Conflict = {
+  slug: string;
+  title: string;
+  startAt: string | Date;
+  endAt: string | Date;
+  kind?: "rsvp" | "organized";
+};
+
+function toDate(d: string | Date) {
+  return d instanceof Date ? d : new Date(d);
+}
+
+function fmt(d: Date) {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
+}
+
+function ConflictModal({
+  open,
+  loading,
+  attemptedStatus,
+  message,
+  conflicts,
+  onClose,
+  onSetMaybe,
+}: {
+  open: boolean;
+  loading: boolean;
+  attemptedStatus: RSVPStatus;
+  message?: string;
+  conflicts: Conflict[];
+  onClose: () => void;
+  onSetMaybe: () => void;
+}) {
+  if (!open) return null;
+
+  const title = "Schedule conflict";
+  const desc =
+    message?.trim() ||
+    "You can’t RSVP “Going” to overlapping events. Choose another option below.";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="conflict-title"
+    >
+      {/* Backdrop */}
+      <button
+        type="button"
+        aria-label="Close modal"
+        className="absolute inset-0 cursor-default bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+        disabled={loading}
+      />
+
+      {/* Panel */}
+      <div className="relative w-[92vw] max-w-lg rounded-3xl border border-white/10 bg-zinc-950 p-6 shadow-2xl">
+        <div className="space-y-2">
+          <h3 id="conflict-title" className="text-lg font-semibold text-white">
+            {title}
+          </h3>
+          <p className="text-sm text-zinc-300">{desc}</p>
+        </div>
+
+        {conflicts?.length ? (
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              Conflicts
+            </div>
+            <ul className="space-y-2">
+              {conflicts.slice(0, 5).map((c) => {
+                const s = fmt(toDate(c.startAt));
+                const e = fmt(toDate(c.endAt));
+                const tag =
+                  c.kind === "organized" ? "Organizing" : c.kind === "rsvp" ? "RSVP" : null;
+
+                return (
+                  <li
+                    key={`${c.slug}-${String(c.startAt)}`}
+                    className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-black/20 p-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/public/events/${c.slug}`}
+                          className="truncate text-sm font-semibold text-zinc-100 hover:underline"
+                        >
+                          {c.title}
+                        </Link>
+                        {tag ? (
+                          <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-zinc-300">
+                            {tag}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-1 text-xs text-zinc-400">
+                        {s} <span className="text-zinc-600">→</span> {e}
+                      </div>
+                    </div>
+
+                    <Link
+                      href={`/public/events/${c.slug}`}
+                      className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-white/10"
+                    >
+                      View
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+
+            {conflicts.length > 5 ? (
+              <div className="mt-2 text-xs text-zinc-500">
+                …and {conflicts.length - 5} more.
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
+          <Link
+            href="/app/dashboard"
+            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 hover:bg-white/10"
+          >
+            Open calendar
+          </Link>
+
+          {/* Only show “Set to Maybe” if they attempted GOING */}
+          {attemptedStatus === "GOING" ? (
+            <button
+              type="button"
+              onClick={onSetMaybe}
+              disabled={loading}
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 hover:bg-white/10 disabled:opacity-60"
+            >
+              Set to Maybe
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 hover:bg-white/10 disabled:opacity-60"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function EventRSVP({
   slug,
@@ -25,6 +187,12 @@ export default function EventRSVP({
   const [attendanceState, setAttendanceState] = useState<AttendanceState>(initial.attendanceState);
   const [pending, startTransition] = useTransition();
 
+  // ✅ modal state for schedule conflicts
+  const [conflictOpen, setConflictOpen] = useState(false);
+  const [conflictMessage, setConflictMessage] = useState<string | undefined>(undefined);
+  const [conflictList, setConflictList] = useState<Conflict[]>([]);
+  const [attempted, setAttempted] = useState<RSVPStatus>(null);
+
   function label(s: RSVPStatus) {
     return s ?? "Not set";
   }
@@ -33,6 +201,8 @@ export default function EventRSVP({
     startTransition(async () => {
       const prevStatus = status;
       const prevState = attendanceState;
+
+      setAttempted(next);
 
       setStatus(next);
       // optimistic default
@@ -50,6 +220,14 @@ export default function EventRSVP({
         if (!res.ok) {
           setStatus(prevStatus);
           setAttendanceState(prevState);
+
+          // ✅ show modal for time conflicts
+          if (res.status === 409) {
+            setConflictMessage(data?.message);
+            setConflictList(Array.isArray(data?.conflicts) ? (data.conflicts as Conflict[]) : []);
+            setConflictOpen(true);
+            return;
+          }
 
           toast.error(data?.message ?? "Failed to update RSVP.");
           return;
@@ -70,7 +248,6 @@ export default function EventRSVP({
           );
         }
 
-        // so attendee list / counts update
         router.refresh();
       } catch (e: any) {
         setStatus(prevStatus);
@@ -138,6 +315,23 @@ export default function EventRSVP({
           Decline
         </button>
       </div>
+
+      <ConflictModal
+        open={conflictOpen}
+        loading={pending}
+        attemptedStatus={attempted}
+        message={conflictMessage}
+        conflicts={conflictList}
+        onClose={() => {
+          if (!pending) setConflictOpen(false);
+        }}
+        onSetMaybe={() => {
+          if (pending) return;
+          setConflictOpen(false);
+          // send MAYBE as a fallback
+          update("MAYBE");
+        }}
+      />
     </div>
   );
 }

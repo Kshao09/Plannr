@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { unstable_noStore as noStore } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import EventRSVP from "@/components/EventRSVP";
@@ -7,8 +8,10 @@ import EventAttendees from "@/components/EventAttendees";
 import EventImageCarousel from "@/components/EventImageCarousel";
 import QrImage from "@/components/QrImage";
 import { getBaseUrl } from "@/lib/siteUrl";
+import DeleteEventButton from "@/components/DeleteEventButton";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function formatDateTime(d: Date) {
   return new Intl.DateTimeFormat(undefined, {
@@ -52,18 +55,48 @@ function buildGoogleCalendarUrl(e: {
   return u.toString();
 }
 
+function buildImagesToShow(event: { image: string | null; images: unknown }) {
+  const cover = (event.image ?? "").trim();
+  const arr = Array.isArray(event.images) ? (event.images as string[]) : [];
+  const cleaned = arr.map((s) => (s ?? "").trim()).filter(Boolean);
+
+  const out: string[] = [];
+  if (cover) out.push(cover);
+  for (const url of cleaned) if (!out.includes(url)) out.push(url);
+  return out;
+}
+
 export default async function EventDetailPage({
   params,
 }: {
+  // ✅ Next 16: params can be a Promise
   params: Promise<{ slug: string }>;
 }) {
+  noStore();
+
+  // ✅ unwrap params
   const { slug } = await params;
+  if (!slug) notFound();
 
   const session = await auth();
-  const userId = session?.user ? (session.user as any).id : null;
-  const role = session?.user ? (session.user as any).role : null;
 
-  const event = await prisma.event.findUnique({
+  // --- Resolve viewer from session (fallback to DB by email if needed) ---
+  const su = session?.user ?? {};
+  let userId: string | null = (su as any)?.id ?? null;
+  let role: string | null = (su as any)?.role ?? null;
+  const email: string | null = (su as any)?.email ?? null;
+
+  if ((!userId || !role) && email) {
+    const dbUser = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, role: true },
+    });
+    userId = userId ?? dbUser?.id ?? null;
+    role = role ?? (dbUser?.role as any) ?? null;
+  }
+
+  // ✅ If slug is not @unique in schema, use findFirst (but keep where filter!)
+  const event = await prisma.event.findFirst({
     where: { slug },
     select: {
       id: true,
@@ -77,24 +110,20 @@ export default async function EventDetailPage({
       organizerId: true,
       organizer: { select: { name: true } },
 
-      // images
       image: true,
       images: true,
 
-      // capacity / waitlist
       capacity: true,
       waitlistEnabled: true,
 
-      // check-in secret (organizer-only UI uses it)
       checkInSecret: true,
     },
   });
 
   if (!event) notFound();
 
-  const canManage = role === "ORGANIZER" && userId && userId === event.organizerId;
+  const canManage = role === "ORGANIZER" && !!userId && userId === event.organizerId;
 
-  // Load initial RSVP (only if logged in)
   let initial = { status: null as any, attendanceState: null as any };
   if (userId) {
     const existing = await prisma.rSVP.findUnique({
@@ -119,19 +148,13 @@ export default async function EventDetailPage({
     description: event.description ?? null,
   });
 
-  const imagesToShow =
-    Array.isArray(event.images) && (event.images as string[]).length > 0
-      ? (event.images as string[])
-      : event.image
-      ? [event.image]
-      : [];
+  const imagesToShow = buildImagesToShow({ image: event.image, images: event.images });
 
-  // ✅ Canonical URLs (uses NEXT_PUBLIC_APP_URL if set, even when running locally)
-  const base = getBaseUrl();
-  const shareUrl = new URL(`/public/events/${encodeURIComponent(event.slug)}`, await base).toString();
+  const base = await getBaseUrl();
+  const shareUrl = new URL(`/public/events/${encodeURIComponent(event.slug)}`, base).toString();
   const staffUrl = new URL(
     `/checkin/${encodeURIComponent(event.slug)}?secret=${encodeURIComponent(event.checkInSecret)}`,
-    await base
+    base
   ).toString();
 
   const disabledReason = canManage ? "Organizers can’t RSVP to their own event." : undefined;
@@ -194,22 +217,22 @@ export default async function EventDetailPage({
           </a>
 
           {canManage ? (
-            <Link
-              href={`/app/organizer/events/${event.slug}/edit`}
-              className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/10"
-            >
-              Edit
-            </Link>
+            <>
+              <Link
+                href={`/app/organizer/events/${event.slug}/edit`}
+                className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/10"
+              >
+                Edit
+              </Link>
+
+              {/* ✅ NEW: Delete button next to Edit */}
+              <DeleteEventButton slug={event.slug} />
+            </>
           ) : null}
         </div>
       </div>
 
       <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-zinc-950/70 shadow-2xl">
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -top-24 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-indigo-500/15 blur-3xl" />
-          <div className="absolute -bottom-28 right-10 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
-        </div>
-
         <div className="relative space-y-5 p-6 md:p-8">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-4 transition hover:bg-white/[0.08]">
@@ -231,52 +254,43 @@ export default async function EventDetailPage({
             </div>
           </div>
 
-          <EventImageCarousel images={imagesToShow} title={event.title} />
+          {imagesToShow.length > 0 ? (
+            <EventImageCarousel images={imagesToShow} title={event.title} />
+          ) : null}
 
-          {/* ✅ Share (shows for everyone) */}
           <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-5">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-white">Share</div>
-                <div className="mt-1 text-xs text-zinc-400">
-                  Scan the QR code or copy the link to share this event.
-                </div>
+            <div className="mb-3">
+              <div className="text-sm font-semibold text-white">Share</div>
+              <div className="mt-1 text-xs text-zinc-400">
+                Scan the QR code or copy the link to share this event.
               </div>
             </div>
             <QrImage
               text={shareUrl}
               openHref={`/app/organizer/events/${event.slug}/checkin`}
               openLabel="Check in ↗"
-              openDisabled={!canManage}   // ✅ disable for non-organizer
+              openDisabled={!canManage}
               showText={false}
             />
           </div>
 
-          {/* ✅ Staff check-in (organizer-only) */}
           {canManage ? (
             <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-5">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-white">Staff check-in</div>
-                  <div className="mt-1 text-xs text-zinc-400">
-                    Send this QR/link to volunteers (no login). Keep the secret private.
-                  </div>
+              <div className="mb-3">
+                <div className="text-sm font-semibold text-white">Staff check-in</div>
+                <div className="mt-1 text-xs text-zinc-400">
+                  Send this QR/link to volunteers (no login). Keep the secret private.
                 </div>
               </div>
 
-              <div className="mb-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-300">
-                Secret: <span className="font-mono text-zinc-200">{event.checkInSecret}</span>
-              </div>
-
               <QrImage
-                text={shareUrl}
+                text={staffUrl}
                 openHref={`/checkin/${event.slug}?secret=${encodeURIComponent(event.checkInSecret)}`}
                 showText={false}
               />
             </div>
           ) : null}
 
-          {/* ✅ RSVP */}
           {userId ? (
             <EventRSVP
               slug={event.slug}
@@ -290,7 +304,6 @@ export default async function EventDetailPage({
             </div>
           )}
 
-          {/* ✅ Organizer-only attendee list + CSV */}
           <EventAttendees eventId={event.id} slug={event.slug} canManage={!!canManage} />
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-4 transition hover:bg-white/[0.08]">
@@ -299,19 +312,6 @@ export default async function EventDetailPage({
               {event.description?.trim() ? event.description : "No description provided."}
             </div>
           </div>
-
-          {event.address ? (
-            <div className="flex flex-wrap items-center gap-3 pt-1">
-              <a
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.address)}`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex w-auto items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-200 hover:bg-white/10"
-              >
-                Open in Google Maps ↗
-              </a>
-            </div>
-          ) : null}
         </div>
       </div>
     </div>

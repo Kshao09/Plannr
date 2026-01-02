@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import CheckInQRCode from "@/components/CheckInQRCode";
 import { EVENT_CATEGORIES } from "@/lib/EventCategories";
 
@@ -20,6 +20,18 @@ function fromDateTimeLocalValue(v: string) {
   return d.toISOString();
 }
 
+type StagedImage = {
+  key: string;
+  file: File;
+  previewUrl: string;
+};
+
+function makeKey(file: File) {
+  return `${file.name}-${file.size}-${file.lastModified}-${Math.random()
+    .toString(16)
+    .slice(2)}`;
+}
+
 export default function EventEditForm({
   slug,
   initial,
@@ -35,8 +47,6 @@ export default function EventEditForm({
     category: string;
     image: string;
     images: string[];
-
-    // ✅ new
     capacity: number | null;
     waitlistEnabled: boolean;
     checkInSecret: string;
@@ -57,17 +67,38 @@ export default function EventEditForm({
   const [address, setAddress] = useState(initial.address);
   const [category, setCategory] = useState(initial.category);
 
-  const [capacity, setCapacity] = useState<string>(initial.capacity ? String(initial.capacity) : "");
-  const [waitlistEnabled, setWaitlistEnabled] = useState<boolean>(!!initial.waitlistEnabled);
+  const [capacity, setCapacity] = useState<string>(
+    initial.capacity ? String(initial.capacity) : ""
+  );
+  const [waitlistEnabled, setWaitlistEnabled] = useState<boolean>(
+    !!initial.waitlistEnabled
+  );
 
   const [images, setImages] = useState<string[]>(initial.images ?? []);
   const [cover, setCover] = useState<string>(initial.image ?? "");
+
+  // ---- NEW: staged previews (local, before upload) ----
+  const [staged, setStaged] = useState<StagedImage[]>([]);
+  const [stagedCoverKey, setStagedCoverKey] = useState<string | null>(null);
+
+  // Revoke preview URLs on unmount (and also when we manually clear/remove)
+  const stagedRef = useRef<StagedImage[]>([]);
+  useEffect(() => {
+    stagedRef.current = staged;
+  }, [staged]);
+  useEffect(() => {
+    return () => {
+      stagedRef.current.forEach((s) => URL.revokeObjectURL(s.previewUrl));
+    };
+  }, []);
 
   const [origin, setOrigin] = useState("");
   useEffect(() => setOrigin(window.location.origin), []);
 
   const checkInUrl = origin
-    ? `${origin}/app/organizer/check-in/${slug}?key=${encodeURIComponent(initial.checkInSecret)}`
+    ? `${origin}/app/organizer/check-in/${slug}?key=${encodeURIComponent(
+        initial.checkInSecret
+      )}`
     : "";
 
   const payload = useMemo(() => {
@@ -83,7 +114,17 @@ export default function EventEditForm({
       capacity: cap && Number.isFinite(cap) ? Math.max(1, Math.floor(cap)) : null,
       waitlistEnabled,
     };
-  }, [title, description, startAt, endAt, locationName, address, category, capacity, waitlistEnabled]);
+  }, [
+    title,
+    description,
+    startAt,
+    endAt,
+    locationName,
+    address,
+    category,
+    capacity,
+    waitlistEnabled,
+  ]);
 
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
@@ -109,12 +150,32 @@ export default function EventEditForm({
     }
   }
 
-  async function onUploadFiles(files: FileList | null) {
+  function clearStaged() {
+    staged.forEach((s) => URL.revokeObjectURL(s.previewUrl));
+    setStaged([]);
+    setStagedCoverKey(null);
+  }
+
+  function removeStaged(key: string) {
+    const target = staged.find((s) => s.key === key);
+    if (target) URL.revokeObjectURL(target.previewUrl);
+
+    const next = staged.filter((s) => s.key !== key);
+    setStaged(next);
+
+    if (stagedCoverKey === key) {
+      setStagedCoverKey(next[0]?.key ?? null);
+    }
+  }
+
+  function onStageFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
 
     setError(null);
 
-    const remaining = 5 - images.length;
+    const remaining = 5 - images.length - staged.length;
+    if (remaining <= 0) return;
+
     const selected = Array.from(files).slice(0, remaining);
 
     for (const f of selected) {
@@ -124,26 +185,20 @@ export default function EventEditForm({
       }
     }
 
-    const fd = new FormData();
-    for (const f of selected) fd.append("images", f); // ✅ match CreateEventForm
+    const newStaged: StagedImage[] = selected.map((file) => ({
+      key: makeKey(file),
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }));
 
-    setUploading(true);
-    try {
-      const res = await fetch(`/api/events/${slug}/images`, { method: "POST", body: fd });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error ?? "Upload failed");
+    const merged = [...staged, ...newStaged];
+    setStaged(merged);
 
-      setImages(Array.isArray(data.images) ? data.images : []);
-      setCover(data.image ?? "");
-      router.refresh();
-    } catch (err: any) {
-      setError(err?.message ?? "Upload failed");
-    } finally {
-      setUploading(false);
-    }
+    // default cover = first staged if none selected yet
+    if (!stagedCoverKey && merged.length) setStagedCoverKey(merged[0].key);
   }
 
-  async function onSetCover(url: string) {
+  async function persistCover(url: string) {
     setError(null);
     setMutatingImages(url);
     try {
@@ -160,9 +215,66 @@ export default function EventEditForm({
       router.refresh();
     } catch (err: any) {
       setError(err?.message ?? "Failed to set cover");
+      // keep optimistic cover UI if you want; here we just leave it
     } finally {
       setMutatingImages(null);
     }
+  }
+
+  async function onUploadStaged() {
+    if (!staged.length) return;
+
+    setError(null);
+
+    const existingCount = images.length;
+    const fd = new FormData();
+    for (const s of staged) fd.append("images", s.file);
+
+    setUploading(true);
+    try {
+      const res = await fetch(`/api/events/${slug}/images`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "Upload failed");
+
+      const returned = Array.isArray(data.images) ? data.images : [];
+      const nextImages =
+        returned.length >= existingCount ? returned : [...images, ...returned];
+
+      setImages(nextImages);
+
+      // If backend already chose a cover, use it first
+      const backendCover = (data.image as string) ?? "";
+      if (backendCover) setCover(backendCover);
+
+      // Then apply user's staged cover choice (override) if we can resolve it
+      const coverIdx = stagedCoverKey
+        ? staged.findIndex((s) => s.key === stagedCoverKey)
+        : 0;
+
+      const desiredCoverUrl =
+        nextImages[existingCount + (coverIdx >= 0 ? coverIdx : 0)];
+
+      // Clear staged previews immediately (UI feels responsive)
+      clearStaged();
+      router.refresh();
+
+      // Persist the chosen cover if we resolved it
+      if (desiredCoverUrl) {
+        setCover(desiredCoverUrl); // optimistic
+        await persistCover(desiredCoverUrl);
+      }
+    } catch (err: any) {
+      setError(err?.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function onSetCover(url: string) {
+    await persistCover(url);
   }
 
   async function onDeleteImage(url: string) {
@@ -284,7 +396,7 @@ export default function EventEditForm({
           Enable waitlist when full
         </label>
 
-        {/* ✅ Check-in QR + link */}
+        {/* Check-in QR + link */}
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
           <div className="text-sm font-semibold text-white">Check-in</div>
           <div className="mt-1 text-xs text-zinc-400">
@@ -314,10 +426,11 @@ export default function EventEditForm({
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
           <div className="text-sm font-semibold text-white">Images</div>
 
+          {/* Existing (uploaded) images */}
           {images.length ? (
             <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
               {images.map((src, i) => {
-                const isCover = !cover && i === 0 ? true : !!cover && src === cover;
+                const isCover = (!cover && i === 0) || (!!cover && src === cover);
                 const busy = mutatingImages === src;
 
                 return (
@@ -362,16 +475,101 @@ export default function EventEditForm({
             <div className="mt-2 text-sm text-zinc-400">No images yet.</div>
           )}
 
+          {/* NEW: Staged (local preview) images */}
+          {staged.length ? (
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="text-xs font-semibold text-zinc-200">
+                Selected (preview — not uploaded yet)
+              </div>
+
+              <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
+                {staged.map((s) => {
+                  const isStagedCover = stagedCoverKey
+                    ? s.key === stagedCoverKey
+                    : false;
+
+                  return (
+                    <div
+                      key={s.key}
+                      className="relative h-24 w-36 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-black/30"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={s.previewUrl}
+                        alt="selected preview"
+                        className="h-full w-full object-cover"
+                      />
+
+                      {isStagedCover ? (
+                        <div className="absolute left-2 top-2 rounded-lg bg-black/60 px-2 py-1 text-xs font-semibold text-white">
+                          Cover
+                        </div>
+                      ) : null}
+
+                      <div className="absolute inset-x-2 bottom-2 flex gap-2">
+                        <button
+                          type="button"
+                          disabled={uploading || isStagedCover}
+                          onClick={() => setStagedCoverKey(s.key)}
+                          className="flex-1 rounded-lg border border-white/10 bg-black/60 px-2 py-1 text-xs font-semibold text-white hover:bg-black/70 disabled:opacity-60"
+                        >
+                          {isStagedCover ? "Cover" : "Set cover"}
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={uploading}
+                          onClick={() => removeStaged(s.key)}
+                          className="rounded-lg border border-white/10 bg-red-500/60 px-2 py-1 text-xs font-semibold text-white hover:bg-red-500/70 disabled:opacity-60"
+                          title="Remove"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={uploading}
+                  onClick={onUploadStaged}
+                  className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-60"
+                >
+                  {uploading ? "Uploading…" : `Upload ${staged.length} image${staged.length === 1 ? "" : "s"}`}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={uploading}
+                  onClick={clearStaged}
+                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-60"
+                >
+                  Clear selection
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* File picker (now stages instead of auto-upload) */}
           <div className="mt-3">
             <input
               type="file"
               accept="image/*"
               multiple
-              disabled={uploading || images.length >= 5}
-              onChange={(e) => onUploadFiles(e.target.files)}
+              disabled={uploading || images.length + staged.length >= 5}
+              onChange={(e) => {
+                onStageFiles(e.target.files);
+                // allow selecting the same file again
+                e.currentTarget.value = "";
+              }}
               className="block w-full text-sm text-zinc-200 file:mr-3 file:rounded-xl file:border file:border-white/10 file:bg-white/5 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-zinc-200 hover:file:bg-white/10 disabled:opacity-60"
             />
-            <div className="mt-2 text-xs text-zinc-400">Upload up to 5 images. You can set one as the cover.</div>
+            <div className="mt-2 text-xs text-zinc-400">
+              Upload up to 5 images total. Pick files → preview → choose cover → upload.
+            </div>
           </div>
         </div>
 

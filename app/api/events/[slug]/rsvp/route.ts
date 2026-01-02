@@ -9,6 +9,21 @@ export const runtime = "nodejs";
 type RSVPStatus = "GOING" | "MAYBE" | "DECLINED";
 type AttendanceState = "CONFIRMED" | "WAITLISTED";
 
+function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) {
+  return bStart < aEnd && bEnd > aStart;
+}
+
+function fmt(d: Date) {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
+}
+
 async function resolveUser(session: any) {
   const su = session?.user ?? {};
   const sessionId = (su as any)?.id as string | undefined;
@@ -66,6 +81,14 @@ async function promoteWaitlist(
   return waiting;
 }
 
+type ConflictItem = {
+  slug: string;
+  title: string;
+  startAt: Date;
+  endAt: Date;
+  kind: "rsvp" | "organized";
+};
+
 export async function POST(
   req: Request,
   { params }: { params: { slug: string } | Promise<{ slug: string }> }
@@ -97,6 +120,10 @@ export async function POST(
           title: true,
           capacity: true,
           waitlistEnabled: true,
+
+          // ✅ needed for conflict checks
+          startAt: true,
+          endAt: true,
         },
       });
 
@@ -137,6 +164,88 @@ export async function POST(
         attendanceState = "CONFIRMED";
       }
 
+      // ✅ Conflict check ONLY when user is about to TAKE a confirmed seat
+      const prevWasConfirmedSeat =
+        prev?.status === "GOING" && prev?.attendanceState === "CONFIRMED";
+      const nowIsConfirmedSeat = status === "GOING" && attendanceState === "CONFIRMED";
+
+      if (
+        nowIsConfirmedSeat &&
+        !prevWasConfirmedSeat &&
+        event.startAt &&
+        event.endAt
+      ) {
+        const conflicts: ConflictItem[] = [];
+
+        // 1) Conflicts with other RSVPs (GOING + CONFIRMED)
+        const rsvpConflicts = await tx.rSVP.findMany({
+          where: {
+            userId: user.id,
+            eventId: { not: event.id },
+            status: "GOING",
+            attendanceState: "CONFIRMED",
+            event: {
+              startAt: { lt: event.endAt },
+              endAt: { gt: event.startAt },
+            },
+          },
+          select: {
+            event: { select: { slug: true, title: true, startAt: true, endAt: true } },
+          },
+          take: 5,
+        });
+
+        for (const r of rsvpConflicts) {
+          const e = r.event;
+          if (overlaps(event.startAt, event.endAt, e.startAt, e.endAt)) {
+            conflicts.push({
+              slug: e.slug,
+              title: e.title,
+              startAt: e.startAt,
+              endAt: e.endAt,
+              kind: "rsvp",
+            });
+          }
+        }
+
+        // 2) Conflicts with events the user organizes (treat as busy)
+        const organizedConflicts = await tx.event.findMany({
+          where: {
+            organizerId: user.id,
+            id: { not: event.id },
+            startAt: { lt: event.endAt },
+            endAt: { gt: event.startAt },
+          },
+          select: { slug: true, title: true, startAt: true, endAt: true },
+          take: 5,
+        });
+
+        for (const e of organizedConflicts) {
+          if (overlaps(event.startAt, event.endAt, e.startAt, e.endAt)) {
+            conflicts.push({
+              slug: e.slug,
+              title: e.title,
+              startAt: e.startAt,
+              endAt: e.endAt,
+              kind: "organized",
+            });
+          }
+        }
+
+        if (conflicts.length > 0) {
+          const msg = conflicts
+            .slice(0, 3)
+            .map((c) => `${c.title} (${fmt(c.startAt)} → ${fmt(c.endAt)})`)
+            .join("; ");
+
+          return {
+            kind: "conflict" as const,
+            conflicts,
+            message: `Time conflict — you already have: ${msg}`,
+          };
+        }
+      }
+
       const rsvp = prev
         ? await tx.rSVP.update({
             where: { id: prev.id },
@@ -153,9 +262,11 @@ export async function POST(
             select: { status: true, attendanceState: true },
           });
 
-      const prevWasConfirmedSeat = prev?.status === "GOING" && prev?.attendanceState === "CONFIRMED";
-      const nowIsConfirmedSeat = rsvp.status === "GOING" && rsvp.attendanceState === "CONFIRMED";
-      const freedSeat = prevWasConfirmedSeat && !nowIsConfirmedSeat;
+      const prevWasConfirmedSeat2 =
+        prev?.status === "GOING" && prev?.attendanceState === "CONFIRMED";
+      const nowIsConfirmedSeat2 =
+        rsvp.status === "GOING" && rsvp.attendanceState === "CONFIRMED";
+      const freedSeat = prevWasConfirmedSeat2 && !nowIsConfirmedSeat2;
 
       const promoted = freedSeat ? await promoteWaitlist(tx, event) : [];
 
@@ -175,6 +286,22 @@ export async function POST(
     if (result.kind === "full") {
       return NextResponse.json(
         { message: "This event is full and waitlist is disabled." },
+        { status: 409 }
+      );
+    }
+
+    if (result.kind === "conflict") {
+      return NextResponse.json(
+        {
+          message: result.message,
+          conflicts: result.conflicts.map((c) => ({
+            slug: c.slug,
+            title: c.title,
+            startAt: c.startAt,
+            endAt: c.endAt,
+            kind: c.kind,
+          })),
+        },
         { status: 409 }
       );
     }

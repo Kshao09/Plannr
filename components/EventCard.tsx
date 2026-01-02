@@ -34,12 +34,35 @@ function formatMeta(iso: string, location?: string | null) {
 }
 
 function fallbackImage(category?: string | null) {
-  if (!category) return "/images/img001_v0.png";
-  if (category === "Food & Drink") return "/images/img002_v0.png";
-  if (category === "Tech") return "/images/img001_v0.png";
-  if (category === "Music") return "/images/img001_v0.png";
-  if (category === "Outdoors") return "/images/img003_v3.png";
-  return "/images/img003_v3.png";
+  if (!category) return "/images/rooftop001.png";
+
+  if (category === "Food & Drink") return "/images/food001.png";
+  if (category === "Tech") return "/images/ai001.png";
+  if (category === "Music") return "/images/music001.png";
+  if (category === "Outdoors") return "/images/rooftop001.png";
+
+  // Optional: extra categories you have files for
+  if (category === "Sports") return "/images/soccer001.png";
+  if (category === "Arts") return "/images/arts001.png";
+
+  return "/images/rooftop001.png";
+}
+
+function normalizeCoverImage(p?: string | null) {
+  const v = String(p ?? "").trim();
+  if (!v) return null;
+
+  // Convert common wrong forms -> correct public URL path
+  if (v.startsWith("public/")) return "/" + v.slice("public/".length);
+  if (v.startsWith("./public/")) return "/" + v.slice("./public/".length);
+  if (v.startsWith("../public/")) return "/" + v.slice("../public/".length);
+
+  // If someone saved relative like "uploads/x.png"
+  if (!v.startsWith("/") && !v.startsWith("http://") && !v.startsWith("https://")) {
+    return "/" + v;
+  }
+
+  return v;
 }
 
 export default function EventCard({
@@ -57,7 +80,7 @@ export default function EventCard({
 
   const { month, day } = useMemo(() => formatDatePill(e.startAt), [e.startAt]);
   const meta = useMemo(() => formatMeta(e.startAt, e.locationName ?? ""), [e.startAt, e.locationName]);
-  const img = e.image ?? fallbackImage(e.category);
+  const img = normalizeCoverImage(e.image) ?? fallbackImage(e.category);
 
   async function onRSVP() {
     if (status !== "authenticated" || !session?.user) {

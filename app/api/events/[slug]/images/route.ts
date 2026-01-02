@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import path from "path";
 import fs from "fs/promises";
 import crypto from "crypto";
+import { revalidatePath } from "next/cache";
 
 export const runtime = "nodejs";
 
@@ -30,9 +31,9 @@ async function resolveUser(session: any): Promise<{ userId: string | null; role:
 }
 
 async function getEventForOrganizer(slug: string, userId: string) {
-  const event = await prisma.event.findUnique({
+  const event = await prisma.event.findFirst({
     where: { slug },
-    select: { id: true, organizerId: true, images: true, image: true },
+    select: { id: true, slug: true, organizerId: true, images: true, image: true },
   });
   if (!event) return { status: 404 as const, error: "Not found", event: null };
   if (event.organizerId !== userId) return { status: 403 as const, error: "Forbidden", event: null };
@@ -40,14 +41,23 @@ async function getEventForOrganizer(slug: string, userId: string) {
 }
 
 function safeAbsPathForEventUpload(eventId: string, url: string) {
-  // only allow deleting files we created: /uploads/events/<eventId>/<file>.png
   const rel = (url.startsWith("/") ? url.slice(1) : url).replace(/\\/g, "/");
   const expectedPrefix = `uploads/events/${eventId}/`;
   if (!rel.startsWith(expectedPrefix)) return null;
   return path.join(process.cwd(), "public", rel);
 }
 
-/** POST: upload pngs */
+function isAllowedImageType(mime: string) {
+  return (
+    mime === "image/png" ||
+    mime === "image/jpeg" ||
+    mime === "image/jpg" ||
+    mime === "image/webp" ||
+    mime === "image/gif"
+  );
+}
+
+/** POST: upload images */
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
 
@@ -62,14 +72,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (!guard.event) return NextResponse.json({ error: guard.error }, { status: guard.status });
 
   const event = guard.event;
+
   const form = await req.formData();
-  const files = form.getAll("files").filter(Boolean) as File[];
+
+  // ✅ accept both keys: "images" (your forms) and "files"
+  const files = [
+    ...form.getAll("images"),
+    ...form.getAll("files"),
+    ...form.getAll("file"),
+  ].filter(Boolean) as File[];
 
   if (files.length === 0) return NextResponse.json({ error: "No files uploaded" }, { status: 400 });
 
   for (const f of files) {
-    if (f.type !== "image/png") {
-      return NextResponse.json({ error: "Only image/png is allowed" }, { status: 400 });
+    if (!isAllowedImageType(f.type)) {
+      return NextResponse.json(
+        { error: `Unsupported image type: ${f.type}. Use png/jpg/webp/gif.` },
+        { status: 400 }
+      );
     }
   }
 
@@ -84,8 +104,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
   const newUrls: string[] = [];
   for (const file of files) {
+    const ext =
+      file.type === "image/png"
+        ? "png"
+        : file.type === "image/webp"
+        ? "webp"
+        : file.type === "image/gif"
+        ? "gif"
+        : "jpg";
+
     const buf = Buffer.from(await file.arrayBuffer());
-    const name = `${crypto.randomUUID()}.png`;
+    const name = `${crypto.randomUUID()}.${ext}`;
     const absPath = path.join(absDir, name);
     await fs.writeFile(absPath, buf);
     newUrls.push(`/${relDir.replace(/\\/g, "/")}/${name}`);
@@ -99,6 +128,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     },
     select: { images: true, image: true },
   });
+
+  // ✅ update public pages
+  revalidatePath("/public/events");
+  revalidatePath(`/public/events/${slug}`);
 
   return NextResponse.json({ ok: true, images: updated.images, image: updated.image });
 }
@@ -132,6 +165,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
     select: { images: true, image: true },
   });
 
+  revalidatePath("/public/events");
+  revalidatePath(`/public/events/${slug}`);
+
   return NextResponse.json({ ok: true, images: updated.images, image: updated.image });
 }
 
@@ -150,8 +186,6 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ slug:
   if (!guard.event) return NextResponse.json({ error: guard.error }, { status: guard.status });
 
   const event = guard.event;
-
-  // allow JSON body
   const body = await req.json().catch(() => ({}));
   const url = String(body?.url ?? "");
 
@@ -163,13 +197,12 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ slug:
   const nextImages = imgs.filter((x) => x !== url);
   const nextCover = event.image === url ? nextImages[0] ?? null : event.image ?? null;
 
-  // delete file from disk (only if it's in our safe upload folder)
   const abs = safeAbsPathForEventUpload(event.id, url);
   if (abs) {
     try {
       await fs.unlink(abs);
     } catch {
-      // ignore missing file
+      // ignore
     }
   }
 
@@ -181,6 +214,9 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ slug:
     },
     select: { images: true, image: true },
   });
+
+  revalidatePath("/public/events");
+  revalidatePath(`/public/events/${slug}`);
 
   return NextResponse.json({ ok: true, images: updated.images, image: updated.image });
 }

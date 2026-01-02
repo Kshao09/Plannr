@@ -124,7 +124,9 @@ export default function CreateEventForm() {
       if (slug && images.length) await uploadImages(slug);
 
       toast.success("Event created!");
-      router.push(slug ? `/app/organizer/events/${slug}/edit` : "/app/organizer/events");
+
+      // ✅ Redirect to public details page instead of edit page
+      router.push(slug ? `/public/events/${slug}` : "/public/events");
       router.refresh();
     } catch (err: any) {
       toast.error(err?.message ?? "Network error.", "Create failed");
