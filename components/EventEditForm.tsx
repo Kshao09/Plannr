@@ -1,9 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import React, { useMemo, useState } from "react";
-
-const CATEGORY_OPTIONS = ["Tech", "Food & Drink", "Music", "Outdoors", "Arts", "Sports", "Other"];
+import React, { useEffect, useMemo, useState } from "react";
+import CheckInQRCode from "@/components/CheckInQRCode";
+import { EVENT_CATEGORIES } from "@/lib/EventCategories";
 
 function toDateTimeLocalValue(iso: string) {
   if (!iso) return "";
@@ -33,8 +33,13 @@ export default function EventEditForm({
     locationName: string;
     address: string;
     category: string;
-    image: string; // ✅ cover
-    images: string[]; // ✅ gallery
+    image: string;
+    images: string[];
+
+    // ✅ new
+    capacity: number | null;
+    waitlistEnabled: boolean;
+    checkInSecret: string;
   };
 }) {
   const router = useRouter();
@@ -52,11 +57,22 @@ export default function EventEditForm({
   const [address, setAddress] = useState(initial.address);
   const [category, setCategory] = useState(initial.category);
 
+  const [capacity, setCapacity] = useState<string>(initial.capacity ? String(initial.capacity) : "");
+  const [waitlistEnabled, setWaitlistEnabled] = useState<boolean>(!!initial.waitlistEnabled);
+
   const [images, setImages] = useState<string[]>(initial.images ?? []);
   const [cover, setCover] = useState<string>(initial.image ?? "");
 
-  const payload = useMemo(
-    () => ({
+  const [origin, setOrigin] = useState("");
+  useEffect(() => setOrigin(window.location.origin), []);
+
+  const checkInUrl = origin
+    ? `${origin}/app/organizer/check-in/${slug}?key=${encodeURIComponent(initial.checkInSecret)}`
+    : "";
+
+  const payload = useMemo(() => {
+    const cap = capacity.trim() ? Number(capacity) : null;
+    return {
       title: title.trim(),
       description: description.trim() || null,
       startAt: fromDateTimeLocalValue(startAt),
@@ -64,9 +80,10 @@ export default function EventEditForm({
       locationName: locationName.trim() || null,
       address: address.trim() || null,
       category: category.trim() || null,
-    }),
-    [title, description, startAt, endAt, locationName, address, category]
-  );
+      capacity: cap && Number.isFinite(cap) ? Math.max(1, Math.floor(cap)) : null,
+      waitlistEnabled,
+    };
+  }, [title, description, startAt, endAt, locationName, address, category, capacity, waitlistEnabled]);
 
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
@@ -101,14 +118,14 @@ export default function EventEditForm({
     const selected = Array.from(files).slice(0, remaining);
 
     for (const f of selected) {
-      if (f.type !== "image/png") {
-        setError("Only PNG files are allowed.");
+      if (!f.type.startsWith("image/")) {
+        setError("Only image files are allowed.");
         return;
       }
     }
 
     const fd = new FormData();
-    for (const f of selected) fd.append("files", f);
+    for (const f of selected) fd.append("images", f); // ✅ match CreateEventForm
 
     setUploading(true);
     try {
@@ -221,56 +238,86 @@ export default function EventEditForm({
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {/* ✅ Fix: add label for Location name (Apple Store field) */}
-          <label className="text-sm text-zinc-300">
-            Location name
-            <input
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
-              value={locationName}
-              onChange={(e) => setLocationName(e.target.value)}
-              placeholder="e.g. Apple Store"
-            />
-          </label>
-
-          {/* ✅ Category dropdown */}
-          <label className="text-sm text-zinc-300">
-            Category
-            <select
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-            >
-              <option value="">—</option>
-              {CATEGORY_OPTIONS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <label className="text-sm text-zinc-300">
-          Address
           <input
-            className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+            className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+            value={locationName}
+            onChange={(e) => setLocationName(e.target.value)}
+            placeholder="Location name"
+          />
+          <input
+            className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            placeholder="Street, city, state"
+            placeholder="Address"
           />
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <select
+            className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+            value={category ?? ""}
+            onChange={(e) => setCategory(e.target.value)}
+          >
+            <option value="">Category (optional)</option>
+            {EVENT_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+
+          <input
+            className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+            value={capacity}
+            onChange={(e) => setCapacity(e.target.value)}
+            placeholder="Capacity (blank = unlimited)"
+            inputMode="numeric"
+          />
+        </div>
+
+        <label className="flex items-center gap-3 text-sm text-zinc-200">
+          <input
+            type="checkbox"
+            checked={waitlistEnabled}
+            onChange={(e) => setWaitlistEnabled(e.target.checked)}
+          />
+          Enable waitlist when full
         </label>
 
-        {/* ✅ Images: upload + carousel + set cover + delete */}
+        {/* ✅ Check-in QR + link */}
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm font-semibold text-white">Images</div>
-            <div className="text-xs text-zinc-400">{images.length}/5</div>
+          <div className="text-sm font-semibold text-white">Check-in</div>
+          <div className="mt-1 text-xs text-zinc-400">
+            Staff can open this link to check in attendees (QR included).
           </div>
 
+          {checkInUrl ? (
+            <div className="mt-3 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+              <div className="min-w-0">
+                <a
+                  href={checkInUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="break-all text-sm text-cyan-200 hover:underline"
+                >
+                  {checkInUrl}
+                </a>
+              </div>
+              <CheckInQRCode value={checkInUrl} />
+            </div>
+          ) : (
+            <div className="mt-3 text-sm text-zinc-400">Loading…</div>
+          )}
+        </div>
+
+        {/* Images */}
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <div className="text-sm font-semibold text-white">Images</div>
+
           {images.length ? (
-            <div className="mt-3 flex gap-3 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
               {images.map((src, i) => {
-                const isCover = !!cover && src === cover;
+                const isCover = !cover && i === 0 ? true : !!cover && src === cover;
                 const busy = mutatingImages === src;
 
                 return (
@@ -281,21 +328,18 @@ export default function EventEditForm({
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={src} alt="event image" className="h-full w-full object-cover" />
 
-                    {/* Cover badge */}
                     {isCover ? (
                       <div className="absolute left-2 top-2 rounded-lg bg-black/60 px-2 py-1 text-xs font-semibold text-white">
                         Cover
                       </div>
                     ) : null}
 
-                    {/* Actions */}
                     <div className="absolute inset-x-2 bottom-2 flex gap-2">
                       <button
                         type="button"
                         disabled={busy || isCover}
                         onClick={() => onSetCover(src)}
                         className="flex-1 rounded-lg border border-white/10 bg-black/60 px-2 py-1 text-xs font-semibold text-white hover:bg-black/70 disabled:opacity-60"
-                        title="Set cover"
                       >
                         {isCover ? "Cover" : "Set cover"}
                       </button>
@@ -321,15 +365,13 @@ export default function EventEditForm({
           <div className="mt-3">
             <input
               type="file"
-              accept="image/png"
+              accept="image/*"
               multiple
               disabled={uploading || images.length >= 5}
               onChange={(e) => onUploadFiles(e.target.files)}
               className="block w-full text-sm text-zinc-200 file:mr-3 file:rounded-xl file:border file:border-white/10 file:bg-white/5 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-zinc-200 hover:file:bg-white/10 disabled:opacity-60"
             />
-            <div className="mt-2 text-xs text-zinc-400">
-              PNG only. Upload up to 5 images. You can set one as the cover.
-            </div>
+            <div className="mt-2 text-xs text-zinc-400">Upload up to 5 images. You can set one as the cover.</div>
           </div>
         </div>
 

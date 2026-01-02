@@ -20,7 +20,7 @@ async function resolveUser(session: any): Promise<{ userId: string | null; role:
 
     return {
       userId: dbUser?.id ?? sessionId ?? null,
-      role: sessionRole ?? dbUser?.role ?? null,
+      role: sessionRole ?? (dbUser?.role as any) ?? null,
     };
   }
 
@@ -40,11 +40,39 @@ function asNullableString(v: any): string | null {
   return s.length ? s : null;
 }
 
+function parseCapacity(v: any): number | null {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  const i = Math.floor(n);
+  if (i <= 0) return null;
+  return i;
+}
+
+function parseBool(v: any): boolean | null {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (s === "true") return true;
+    if (s === "false") return false;
+  }
+  return null;
+}
+
+function parseImages(v: any): string[] | null {
+  if (v == null) return null;
+  if (!Array.isArray(v)) return null;
+  return v
+    .map((x) => String(x ?? "").trim())
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ slug: string }> } // ✅ Promise in your Next version
+  { params }: { params: Promise<{ slug: string }> } // Next version in your project
 ) {
-  const { slug } = await params; // ✅ unwrap params
+  const { slug } = await params;
 
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -52,7 +80,6 @@ export async function PATCH(
   const { userId, role } = await resolveUser(session);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Must be organizer to edit
   if (role !== "ORGANIZER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const event = await prisma.event.findUnique({
@@ -61,9 +88,7 @@ export async function PATCH(
   });
   if (!event) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  if (event.organizerId !== userId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  if (event.organizerId !== userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   let body: any = {};
   try {
@@ -89,6 +114,10 @@ export async function PATCH(
     return NextResponse.json({ error: "End must be after start" }, { status: 400 });
   }
 
+  const capacity = parseCapacity(body.capacity);
+  const waitlistEnabled = parseBool(body.waitlistEnabled);
+  const images = parseImages(body.images);
+
   const updated = await prisma.event.update({
     where: { id: event.id },
     data: {
@@ -100,6 +129,9 @@ export async function PATCH(
       address,
       category,
       image,
+      ...(images ? { images } : {}),
+      capacity,
+      ...(waitlistEnabled == null ? {} : { waitlistEnabled }),
     },
     select: { slug: true },
   });

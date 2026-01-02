@@ -1,4 +1,3 @@
-// app/api/events/route.ts
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
@@ -9,11 +8,8 @@ function pickFallbackImage(title: string, category?: string | null) {
   const t = title.toLowerCase();
   const c = (category ?? "").toLowerCase();
 
-  // If your file is /public/image/rockConcert001.png => "/image/rockConcert001.png"
-  // If your file is /public/images/rockConcert001.png => "/images/rockConcert001.png"
   if (t.includes("rock") || t.includes("concert") || c.includes("music"))
     return "/images/rockConcert001.png";
-
   if (t.includes("ai") || t.includes("robot") || c.includes("tech")) return "/images/ai001.png";
   if (t.includes("food") || t.includes("truck") || c.includes("drink")) return "/images/food001.png";
   if (t.includes("chess") || c.includes("arts")) return "/images/chess001.png";
@@ -59,9 +55,35 @@ function parseDate(v: any) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function parseCapacity(v: any): number | null {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  const i = Math.floor(n);
+  if (i <= 0) return null;
+  return i;
+}
+
+function parseBool(v: any): boolean | null {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (s === "true") return true;
+    if (s === "false") return false;
+  }
+  return null;
+}
+
+function parseImages(v: any): string[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((x) => String(x ?? "").trim())
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
 /**
  * GET /api/events?q=&city=&category=&take=
- * Used by your events list / filters
  */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -113,6 +135,8 @@ export async function GET(req: Request) {
       category: true,
       image: true,
       organizer: { select: { name: true } },
+      capacity: true,
+      waitlistEnabled: true,
     },
   });
 
@@ -128,6 +152,8 @@ export async function GET(req: Request) {
       category: e.category,
       image: e.image ?? pickFallbackImage(e.title, e.category),
       organizerName: e.organizer?.name ?? null,
+      capacity: e.capacity,
+      waitlistEnabled: e.waitlistEnabled,
     })),
     { status: 200 }
   );
@@ -135,13 +161,7 @@ export async function GET(req: Request) {
 
 /**
  * POST /api/events
- * Organizer-only create endpoint (fixes your 405).
- *
- * body:
- * {
- *  title, description?, startAt, endAt,
- *  locationName?, address?, category?, image?
- * }
+ * Organizer-only create endpoint
  */
 export async function POST(req: Request) {
   const session = await auth();
@@ -172,18 +192,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "End time must be after start time." }, { status: 400 });
   }
 
+  const capacity = parseCapacity(body.capacity);
+  const waitlistEnabled = parseBool(body.waitlistEnabled) ?? true;
+
+  const requestedImage = String(body.image ?? "").trim();
+  const image = requestedImage || pickFallbackImage(title, category);
+
+  const images = parseImages(body.images);
+
   const base = slugify(title) || "event";
   let slug = base;
 
-  // ensure uniqueness
   for (let i = 0; i < 8; i++) {
     const exists = await prisma.event.findUnique({ where: { slug }, select: { id: true } });
     if (!exists) break;
     slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
   }
-
-  const requestedImage = String(body.image ?? "").trim();
-  const image = requestedImage || pickFallbackImage(title, category);
 
   const created = await prisma.event.create({
     data: {
@@ -196,7 +220,10 @@ export async function POST(req: Request) {
       address,
       category,
       image,
+      images,
       organizerId: userId,
+      capacity,
+      waitlistEnabled,
     },
     select: { id: true, slug: true },
   });

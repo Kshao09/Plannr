@@ -6,8 +6,6 @@ import { useToast } from "@/components/ToastProvider";
 import { EVENT_CATEGORIES } from "@/lib/EventCategories";
 
 function toISOFromDatetimeLocal(v: string) {
-  // input like "2026-01-07T23:15"
-  // Convert to ISO string in local time -> UTC ISO
   const d = new Date(v);
   return d.toISOString();
 }
@@ -26,17 +24,18 @@ export default function CreateEventForm() {
   const [address, setAddress] = useState("");
   const [category, setCategory] = useState("");
 
+  // ✅ NEW
+  const [capacity, setCapacity] = useState<string>("");
+  const [waitlistEnabled, setWaitlistEnabled] = useState<boolean>(true);
+
   // images
   const [images, setImages] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
 
-  // Build previews + cleanup URLs
   useEffect(() => {
     const urls = images.map((f) => URL.createObjectURL(f));
     setPreviews(urls);
-    return () => {
-      urls.forEach((u) => URL.revokeObjectURL(u));
-    };
+    return () => urls.forEach((u) => URL.revokeObjectURL(u));
   }, [images]);
 
   function onPickImages(e: React.ChangeEvent<HTMLInputElement>) {
@@ -44,19 +43,10 @@ export default function CreateEventForm() {
     if (!files.length) return;
 
     const onlyImages = files.filter((f) => f.type.startsWith("image/"));
-    if (onlyImages.length !== files.length) {
-      toast.error("Only image files are allowed.", "Invalid file");
-    }
+    if (onlyImages.length !== files.length) toast.error("Only image files are allowed.", "Invalid");
 
     const merged = [...images, ...onlyImages];
-    if (merged.length > 5) {
-      toast.error("You can upload up to 5 images.", "Too many images");
-      setImages(merged.slice(0, 5));
-    } else {
-      setImages(merged);
-    }
-
-    // allow selecting the same file again later
+    setImages(merged.slice(0, 5));
     e.target.value = "";
   }
 
@@ -65,6 +55,8 @@ export default function CreateEventForm() {
   }
 
   const payload = useMemo(() => {
+    const cap = capacity.trim() ? Number(capacity) : null;
+
     return {
       title: title.trim(),
       description: description.trim() || null,
@@ -73,17 +65,25 @@ export default function CreateEventForm() {
       locationName: locationName.trim() || null,
       address: address.trim() || null,
       category: category || null,
+
+      // ✅ NEW
+      capacity: cap != null && Number.isFinite(cap) ? Math.max(1, Math.floor(cap)) : null,
+      waitlistEnabled,
     };
-  }, [title, description, startAt, endAt, locationName, address, category]);
+  }, [title, description, startAt, endAt, locationName, address, category, capacity, waitlistEnabled]);
 
   function validate() {
     if (!payload.title) return "Title is required.";
     if (!startAt || !endAt) return "Start and End are required.";
+
     const s = new Date(payload.startAt as string).getTime();
     const e = new Date(payload.endAt as string).getTime();
     if (Number.isNaN(s) || Number.isNaN(e)) return "Invalid Start/End time.";
     if (e <= s) return "End must be after Start.";
     if (images.length > 5) return "Max 5 images.";
+
+    if (payload.capacity != null && payload.capacity < 1) return "Capacity must be >= 1.";
+
     return null;
   }
 
@@ -91,32 +91,22 @@ export default function CreateEventForm() {
     if (images.length === 0) return;
 
     const fd = new FormData();
-    // server expects "images"
     images.forEach((file) => fd.append("images", file));
 
-    const res = await fetch(`/api/events/${slug}/images`, {
-      method: "POST",
-      body: fd,
-    });
-
+    const res = await fetch(`/api/events/${slug}/images`, { method: "POST", body: fd });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      const msg = data?.error ?? "Failed to upload images.";
-      throw new Error(msg);
+      throw new Error(data?.error ?? "Failed to upload images.");
     }
   }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const v = validate();
-    if (v) {
-      toast.error(v, "Create failed");
-      return;
-    }
+    if (v) return toast.error(v, "Create failed");
 
     setSaving(true);
     try {
-      // 1) Create event (JSON)
       const res = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -124,30 +114,17 @@ export default function CreateEventForm() {
       });
 
       const data = await res.json().catch(() => ({}));
-
       if (!res.ok) {
         toast.error(data?.error ?? "Failed to create event.", "Create failed");
         return;
       }
 
-      // IMPORTANT: your POST must return slug
-      const slug =
-        data?.slug ?? data?.event?.slug ?? data?.data?.slug ?? null;
+      const slug = data?.slug ?? data?.event?.slug ?? data?.data?.slug ?? null;
 
-      if (!slug || typeof slug !== "string") {
-        toast.success("Event created!");
-        router.push("/app/organizer/events");
-        router.refresh();
-        return;
-      }
-
-      // 2) Upload images (multipart)
-      if (images.length) {
-        await uploadImages(slug);
-      }
+      if (slug && images.length) await uploadImages(slug);
 
       toast.success("Event created!");
-      router.push(`/app/organizer/events/${slug}/edit`);
+      router.push(slug ? `/app/organizer/events/${slug}/edit` : "/app/organizer/events");
       router.refresh();
     } catch (err: any) {
       toast.error(err?.message ?? "Network error.", "Create failed");
@@ -239,7 +216,30 @@ export default function CreateEventForm() {
           />
         </label>
 
-        {/* Images (max 5) */}
+        {/* ✅ NEW: Capacity + Waitlist */}
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="text-sm text-zinc-300">
+            Capacity (blank = unlimited)
+            <input
+              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+              value={capacity}
+              onChange={(e) => setCapacity(e.target.value)}
+              inputMode="numeric"
+              placeholder="e.g. 50"
+            />
+          </label>
+
+          <label className="mt-6 flex items-center gap-3 text-sm text-zinc-200">
+            <input
+              type="checkbox"
+              checked={waitlistEnabled}
+              onChange={(e) => setWaitlistEnabled(e.target.checked)}
+            />
+            Enable waitlist when full
+          </label>
+        </div>
+
+        {/* Images */}
         <div className="mt-2">
           <div className="flex items-center justify-between">
             <div className="text-sm text-zinc-300">Images</div>
@@ -280,10 +280,6 @@ export default function CreateEventForm() {
                 disabled={images.length >= 5}
               />
             </label>
-          </div>
-
-          <div className="mt-2 text-xs text-zinc-500">
-            Upload up to 5 images. You can reorder later on the edit page (if you support that there).
           </div>
         </div>
 

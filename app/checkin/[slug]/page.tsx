@@ -1,14 +1,37 @@
+import { notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 import StaffCheckInClient from "./staffCheckInClient";
 
-export default function Page({ params, searchParams }: any) {
-  const secret = searchParams?.secret ?? "";
+export const dynamic = "force-dynamic";
+
+export default async function StaffCheckInPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ secret?: string }>;
+}) {
+  const { slug } = await params;
+  const { secret } = await searchParams;
+
+  const event = await prisma.event.findUnique({
+    where: { slug },
+    select: { title: true, checkInSecret: true },
+  });
+
+  if (!event) notFound();
+
+  // allow page to render but show an error in the client UI if secret is missing/invalid
+  const s = String(secret ?? "");
+
   return (
-    <div className="mx-auto w-full max-w-xl px-4 py-10">
-      <h1 className="text-2xl font-semibold">Staff Check-in</h1>
-      <p className="mt-2 text-sm text-zinc-400">Paste/scan attendee code to check them in.</p>
+    <main className="mx-auto max-w-xl px-6 py-10">
+      <h1 className="text-2xl font-semibold text-white">Staff check-in</h1>
+      <p className="mt-2 text-sm text-zinc-400">{event.title}</p>
+
       <div className="mt-6">
-        <StaffCheckInClient slug={params.slug} secret={secret} />
+        <StaffCheckInClient slug={slug} secret={s} expectedSecret={event.checkInSecret} />
       </div>
-    </div>
+    </main>
   );
 }

@@ -51,9 +51,12 @@ export default async function EditEventPage({
       category: true,
       organizerId: true,
 
-      // ✅ cover + gallery
       image: true,
       images: true,
+
+      capacity: true,
+      waitlistEnabled: true,
+      checkInSecret: true,
     },
   });
 
@@ -88,6 +91,9 @@ export default async function EditEventPage({
           category: event.category ?? "",
           image: event.image ?? "",
           images: Array.isArray(event.images) ? (event.images as string[]) : [],
+          capacity: event.capacity ?? null,
+          waitlistEnabled: event.waitlistEnabled ?? true,
+          checkInSecret: event.checkInSecret,
         }}
       />
     </main>

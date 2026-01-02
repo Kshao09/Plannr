@@ -1,17 +1,45 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import QrImage from "@/components/QrImage";
 import { useToast } from "@/components/ToastProvider";
+import QrImage from "@/components/QrImage";
 
-export default function CheckInClient({ event }: { event: any }) {
+function normalizeBase(u: string) {
+  return u.replace(/\/+$/, "");
+}
+function getClientBaseUrl() {
+  const env = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim();
+  if (env) return normalizeBase(/^https?:\/\//i.test(env) ? env : `https://${env}`);
+  if (typeof window !== "undefined") return window.location.origin;
+  return "http://localhost:3000";
+}
+
+export default function CheckInClient({
+  event,
+  shareUrl,
+  staffUrl,
+}: {
+  event: any;
+  shareUrl?: string;
+  staffUrl?: string;
+}) {
   const toast = useToast();
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const origin = typeof window !== "undefined" ? window.location.origin : process.env.APP_URL ?? "";
-  const shareUrl = `${origin}/events/${event.slug}`;
-  const staffUrl = `${origin}/checkin/${event.slug}?secret=${event.checkInSecret}`;
+  const base = getClientBaseUrl();
+
+  const resolvedShareUrl = useMemo(
+    () => shareUrl ?? new URL(`/public/events/${event.slug}`, base).toString(),
+    [shareUrl, event.slug, base]
+  );
+
+  const resolvedStaffUrl = useMemo(
+    () =>
+      staffUrl ??
+      new URL(`/checkin/${event.slug}?secret=${encodeURIComponent(event.checkInSecret)}`, base).toString(),
+    [staffUrl, event.slug, event.checkInSecret, base]
+  );
 
   const confirmed = event.rsvps.filter((r: any) => r.attendanceState === "CONFIRMED");
   const waitlisted = event.rsvps.filter((r: any) => r.attendanceState === "WAITLISTED");
@@ -19,6 +47,7 @@ export default function CheckInClient({ event }: { event: any }) {
   async function onCheckIn() {
     const c = code.trim();
     if (!c) return;
+
     setBusy(true);
     try {
       const res = await fetch(`/api/events/${event.slug}/checkin`, {
@@ -34,7 +63,6 @@ export default function CheckInClient({ event }: { event: any }) {
       const name = data?.rsvp?.user?.name ?? data?.rsvp?.user?.email ?? "Attendee";
       toast.success(data.already ? `Already checked in: ${name}` : `Checked in: ${name}`);
       setCode("");
-      // easiest refresh: let your page do router.refresh() if you want real-time
       location.reload();
     } finally {
       setBusy(false);
@@ -42,8 +70,8 @@ export default function CheckInClient({ event }: { event: any }) {
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-[1fr_280px]">
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+    <div className="w-full">
+      <div className="mx-auto w-full max-w-[1200px] rounded-2xl border border-white/10 bg-white/5 p-6">
         <div className="flex flex-wrap items-center gap-4 text-sm text-zinc-300">
           <div>
             Confirmed: <b className="text-white">{confirmed.length}</b>
@@ -61,7 +89,7 @@ export default function CheckInClient({ event }: { event: any }) {
           ) : null}
         </div>
 
-        <div className="mt-5 flex gap-2">
+        <div className="mt-5 flex items-stretch gap-2">
           <input
             value={code}
             onChange={(e) => setCode(e.target.value)}
@@ -72,12 +100,13 @@ export default function CheckInClient({ event }: { event: any }) {
             type="button"
             onClick={onCheckIn}
             disabled={busy}
-            className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black disabled:opacity-60"
+            className="whitespace-nowrap rounded-xl bg-white px-6 py-3 text-sm font-semibold text-black disabled:opacity-60"
           >
             {busy ? "…" : "Check in"}
           </button>
         </div>
 
+        {/* rest of your component stays the same */}
         <div className="mt-6">
           <h3 className="text-sm font-semibold text-white">Confirmed attendees</h3>
           <div className="mt-3 divide-y divide-white/10 rounded-xl border border-white/10">
@@ -118,25 +147,7 @@ export default function CheckInClient({ event }: { event: any }) {
           </div>
         ) : null}
       </div>
-
-      <div className="grid gap-4">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div className="text-sm font-semibold text-white">Share QR</div>
-          <div className="mt-3">
-            <QrImage text={shareUrl} />
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div className="text-sm font-semibold text-white">Staff check-in link</div>
-          <div className="mt-2 text-xs text-zinc-400">
-            Send this link to volunteers (no login needed). They’ll use it to check people in.
-          </div>
-          <div className="mt-3">
-            <QrImage text={staffUrl} />
-          </div>
-        </div>
-      </div>
     </div>
   );
+
 }

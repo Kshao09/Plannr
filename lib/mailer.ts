@@ -1,65 +1,69 @@
 // lib/mailer.ts
 import nodemailer from "nodemailer";
-import { getAppUrl } from "@/lib/appUrl";
 
-type SendResult = { sent: boolean; verifyUrl: string };
+type SendEmailArgs = {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+  replyTo?: string;
+};
 
-function buildVerifyUrl(token: string) {
-  const base = getAppUrl();
-
-  const url = new URL("/verify-email", base);
-  url.searchParams.set("token", token);
-
-  return url.toString();
-}
+let cachedTransporter: nodemailer.Transporter | null = null;
 
 function getTransporter() {
+  if (cachedTransporter) return cachedTransporter;
+
   const host = process.env.SMTP_HOST;
+  const port = Number(process.env.SMTP_PORT ?? "587");
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
 
-  // Dev-friendly: allow app to run without SMTP configured
-  if (!host || !user || !pass) return null;
-
-  return nodemailer.createTransport({
-    host,
-    port: Number(process.env.SMTP_PORT ?? 587),
-    secure: process.env.SMTP_SECURE === "true", // true for 465, false for 587
-    auth: { user, pass },
-  });
-}
-
-export async function sendVerificationEmail({
-  to,
-  token,
-}: {
-  to: string;
-  token: string;
-}): Promise<SendResult> {
-  const verifyUrl = buildVerifyUrl(token);
-  const transporter = getTransporter();
-
-  // ✅ Dev fallback: no SMTP configured
-  if (!transporter) {
-    console.warn("[mailer] SMTP not configured. Verification link:", verifyUrl);
-    return { sent: false, verifyUrl };
+  if (!host || !user || !pass) {
+    console.warn(
+      "[mailer] SMTP not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS. Emails will be skipped."
+    );
+    return null;
   }
 
-  const from = process.env.EMAIL_FROM || process.env.SMTP_USER!;
+  const secure = port === 465; // 465 = SSL, 587 = STARTTLS
 
-  await transporter.sendMail({
-    from,
-    to,
-    subject: "Verify your email",
-    text: `Verify your email: ${verifyUrl}`,
-    html: `
-      <div style="font-family: ui-sans-serif, system-ui; line-height: 1.5;">
-        <h2>Verify your email</h2>
-        <p>Click to verify:</p>
-        <p><a href="${verifyUrl}">${verifyUrl}</a></p>
-      </div>
-    `,
+  cachedTransporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: { user, pass },
+
+    // Helpful for Gmail STARTTLS
+    ...(secure
+      ? {}
+      : {
+          requireTLS: true,
+        }),
   });
 
-  return { sent: true, verifyUrl };
+  return cachedTransporter;
+}
+
+export function getFromAddress() {
+  // Example: "Plannr <no-reply@yourdomain.com>"
+  return process.env.EMAIL_FROM || process.env.SMTP_FROM || "Plannr <no-reply@plannr.local>";
+}
+
+export async function sendEmail({ to, subject, html, text, replyTo }: SendEmailArgs) {
+  const transporter = getTransporter();
+  if (!transporter) return { skipped: true };
+
+  const from = getFromAddress();
+
+  const info = await transporter.sendMail({
+    from,
+    to,
+    subject,
+    html,
+    text,
+    replyTo,
+  });
+
+  return { skipped: false, messageId: info.messageId };
 }

@@ -1,328 +1,231 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { sendEmail } from "@/lib/email";
-import { promotedEmail, rsvpConfirmedEmail, waitlistedEmail } from "@/lib/emailTemplates";
+import { getBaseUrlFromRequest } from "@/lib/siteUrl";
+import { emailRsvpUpdated, emailWaitlistPromoted } from "@/lib/rsvpEmails";
+
+export const runtime = "nodejs";
 
 type RSVPStatus = "GOING" | "MAYBE" | "DECLINED";
-const ALLOWED: ReadonlySet<RSVPStatus> = new Set(["GOING", "MAYBE", "DECLINED"]);
-
 type AttendanceState = "CONFIRMED" | "WAITLISTED";
 
-async function resolveUserId(session: any): Promise<string | null> {
-  const u = session?.user ?? {};
-  const sessionId = u?.id as string | undefined;
-  const sessionEmail = u?.email as string | undefined;
+async function resolveUser(session: any) {
+  const su = session?.user ?? {};
+  const sessionId = (su as any)?.id as string | undefined;
+  const sessionEmail = su?.email as string | undefined;
 
-  if (sessionId) return sessionId;
+  if (sessionId) {
+    const u = await prisma.user.findUnique({
+      where: { id: sessionId },
+      select: { id: true, email: true, name: true },
+    });
+    if (u?.email) return u;
+  }
 
   if (sessionEmail) {
-    const dbUser = await prisma.user.findUnique({
+    return prisma.user.findUnique({
       where: { email: sessionEmail },
-      select: { id: true },
+      select: { id: true, email: true, name: true },
     });
-    return dbUser?.id ?? null;
   }
+
   return null;
 }
 
-async function resolveSlug(
-  params: { slug: string } | Promise<{ slug: string }>
-): Promise<string> {
-  const { slug } = await Promise.resolve(params);
-  return slug;
-}
-
-function fmt(d: Date) {
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
-}
-
-function safeCapacity(cap: number | null | undefined) {
-  if (cap == null) return null;
-  return Math.max(0, cap);
-}
-
-// GET /api/events/:slug/rsvp
-export async function GET(
-  _req: Request,
-  { params }: { params: { slug: string } | Promise<{ slug: string }> }
+async function promoteWaitlist(
+  tx: any,
+  event: { id: string; capacity: number | null; waitlistEnabled: boolean }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  if (!event.waitlistEnabled) return [];
 
-  const userId = await resolveUserId(session);
-  if (!userId) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  if (typeof event.capacity !== "number" || !Number.isFinite(event.capacity) || event.capacity <= 0) {
+    return [];
+  }
 
-  const slug = await resolveSlug(params);
-
-  const event = await prisma.event.findUnique({
-    where: { slug },
-    select: { id: true, capacity: true, waitlistEnabled: true },
-  });
-  if (!event) return NextResponse.json({ message: "Event not found" }, { status: 404 });
-
-  const existing = await prisma.rSVP.findUnique({
-    where: { userId_eventId: { userId, eventId: event.id } },
-    select: {
-      status: true,
-      attendanceState: true,
-      checkInCode: true,
-      checkedInAt: true,
-    },
+  const confirmed = await tx.rSVP.count({
+    where: { eventId: event.id, status: "GOING", attendanceState: "CONFIRMED" },
   });
 
-  const cap = safeCapacity(event.capacity);
+  const slots = event.capacity - confirmed;
+  if (slots <= 0) return [];
 
-  const [confirmedCount, waitlistedCount] = await Promise.all([
-    prisma.rSVP.count({
-      where: { eventId: event.id, status: "GOING", attendanceState: "CONFIRMED" },
-    }),
-    prisma.rSVP.count({
-      where: { eventId: event.id, status: "GOING", attendanceState: "WAITLISTED" },
-    }),
-  ]);
+  const waiting = await tx.rSVP.findMany({
+    where: { eventId: event.id, status: "GOING", attendanceState: "WAITLISTED" },
+    orderBy: { createdAt: "asc" },
+    take: slots,
+    select: { id: true, user: { select: { email: true, name: true } } },
+  });
 
-  const isFull = cap != null ? confirmedCount >= cap : false;
-  const spotsLeft = cap != null ? Math.max(0, cap - confirmedCount) : null;
+  for (const w of waiting) {
+    await tx.rSVP.update({
+      where: { id: w.id },
+      data: { attendanceState: "CONFIRMED" },
+    });
+  }
 
-  const canShowCheckIn =
-    existing?.status === "GOING" && existing?.attendanceState === "CONFIRMED";
-
-  return NextResponse.json(
-    {
-      status: existing?.status ?? null,
-      attendanceState: existing?.attendanceState ?? null,
-      checkInCode: canShowCheckIn ? existing?.checkInCode : null,
-      checkedInAt: canShowCheckIn ? existing?.checkedInAt : null,
-
-      capacity: cap,
-      waitlistEnabled: event.waitlistEnabled,
-      confirmedCount,
-      waitlistedCount,
-      isFull,
-      spotsLeft,
-    },
-    { status: 200 }
-  );
+  return waiting;
 }
 
-// POST /api/events/:slug/rsvp body: { status }
 export async function POST(
   req: Request,
   { params }: { params: { slug: string } | Promise<{ slug: string }> }
 ) {
+  const { slug } = await Promise.resolve(params);
+
   const session = await auth();
   if (!session?.user) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 
-  const userId = await resolveUserId(session);
-  if (!userId) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-
-  const slug = await resolveSlug(params);
+  const user = await resolveUser(session);
+  if (!user?.id || !user.email) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
-  const status = String(body?.status ?? "") as RSVPStatus;
+  const status = String(body?.status ?? "").toUpperCase() as RSVPStatus;
 
-  if (!ALLOWED.has(status)) {
-    return NextResponse.json({ message: "Bad request" }, { status: 400 });
+  if (!["GOING", "MAYBE", "DECLINED"].includes(status)) {
+    return NextResponse.json({ message: "Invalid RSVP status" }, { status: 400 });
   }
 
-  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
-  const userEmail = (session?.user?.email as string | undefined) ?? null;
-
-  const result = await prisma.$transaction(async (tx) => {
-    // serialize writes per event to prevent overbooking
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${slug}))`;
-
-    const event = await tx.event.findUnique({
-      where: { slug },
-      select: {
-        id: true,
-        slug: true,
-        title: true,
-        startAt: true,
-        locationName: true,
-        organizerId: true,
-        capacity: true,
-        waitlistEnabled: true,
-      },
-    });
-    if (!event) return { ok: false as const, code: 404, message: "Event not found" };
-
-    if (event.organizerId === userId) {
-      return { ok: false as const, code: 403, message: "Organizers cannot RSVP their own event." };
-    }
-
-    const cap = safeCapacity(event.capacity);
-
-    const existing = await tx.rSVP.findUnique({
-      where: { userId_eventId: { userId, eventId: event.id } },
-      select: { status: true, attendanceState: true },
-    });
-
-    const countConfirmedGoing = () =>
-      tx.rSVP.count({
-        where: { eventId: event.id, status: "GOING", attendanceState: "CONFIRMED" },
-      });
-
-    let nextState: AttendanceState = "CONFIRMED";
-
-    if (status === "GOING") {
-      if (cap == null) {
-        nextState = "CONFIRMED";
-      } else if (existing?.status === "GOING" && existing.attendanceState === "CONFIRMED") {
-        nextState = "CONFIRMED";
-      } else {
-        const confirmed = await countConfirmedGoing();
-        if (confirmed < cap) nextState = "CONFIRMED";
-        else {
-          if (!event.waitlistEnabled) {
-            return { ok: false as const, code: 409, message: "Event is full." };
-          }
-          nextState = "WAITLISTED";
-        }
-      }
-    }
-
-    const rsvp = await tx.rSVP.upsert({
-      where: { userId_eventId: { userId, eventId: event.id } },
-      update: { status, attendanceState: nextState },
-      create: { userId, eventId: event.id, status, attendanceState: nextState },
-      select: {
-        status: true,
-        attendanceState: true,
-        checkInCode: true,
-        checkedInAt: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-
-    // Promote FIFO while seats available
-    const promoted: { email: string; name: string | null }[] = [];
-    if (cap != null) {
-      let confirmed = await countConfirmedGoing();
-
-      while (confirmed < cap) {
-        const next = await tx.rSVP.findFirst({
-          where: { eventId: event.id, status: "GOING", attendanceState: "WAITLISTED" },
-          orderBy: { createdAt: "asc" },
-          select: { id: true, user: { select: { email: true, name: true } } },
-        });
-
-        if (!next?.user?.email) break;
-
-        await tx.rSVP.update({
-          where: { id: next.id },
-          data: { attendanceState: "CONFIRMED" },
-        });
-
-        promoted.push({ email: next.user.email, name: next.user.name });
-        confirmed = await countConfirmedGoing();
-      }
-    }
-
-    const [confirmedCount, waitlistedCount] = await Promise.all([
-      tx.rSVP.count({
-        where: { eventId: event.id, status: "GOING", attendanceState: "CONFIRMED" },
-      }),
-      tx.rSVP.count({
-        where: { eventId: event.id, status: "GOING", attendanceState: "WAITLISTED" },
-      }),
-    ]);
-
-    const isFull = cap != null ? confirmedCount >= cap : false;
-    const spotsLeft = cap != null ? Math.max(0, cap - confirmedCount) : null;
-
-    const wasConfirmed =
-      existing?.status === "GOING" && existing.attendanceState === "CONFIRMED";
-    const wasWaitlisted =
-      existing?.status === "GOING" && existing.attendanceState === "WAITLISTED";
-
-    const nowConfirmed = rsvp.status === "GOING" && rsvp.attendanceState === "CONFIRMED";
-    const nowWaitlisted = rsvp.status === "GOING" && rsvp.attendanceState === "WAITLISTED";
-
-    return {
-      ok: true as const,
-      event,
-      cap,
-      rsvp,
-      newlyConfirmed: nowConfirmed && !wasConfirmed,
-      newlyWaitlisted: nowWaitlisted && !wasWaitlisted,
-      promoted,
-      confirmedCount,
-      waitlistedCount,
-      isFull,
-      spotsLeft,
-    };
-  });
-
-  if (!result.ok) {
-    return NextResponse.json({ message: result.message }, { status: result.code });
-  }
-
-  const when = fmt(new Date(result.event.startAt));
-  const eventUrl = `${appUrl}/events/${result.event.slug}`;
+  const base = getBaseUrlFromRequest(req);
 
   try {
-    if (userEmail && result.newlyConfirmed) {
-      await sendEmail({
-        to: userEmail,
-        subject: `Confirmed: ${result.event.title}`,
-        html: rsvpConfirmedEmail({
+    const result = await prisma.$transaction(async (tx) => {
+      const event = await tx.event.findUnique({
+        where: { slug },
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          capacity: true,
+          waitlistEnabled: true,
+        },
+      });
+
+      if (!event) {
+        return { kind: "notfound" as const };
+      }
+
+      const prev = await tx.rSVP.findUnique({
+        where: { userId_eventId: { userId: user.id, eventId: event.id } },
+        select: { id: true, status: true, attendanceState: true },
+      });
+
+      let attendanceState: AttendanceState = "CONFIRMED";
+
+      if (status === "GOING") {
+        if (typeof event.capacity === "number" && Number.isFinite(event.capacity)) {
+          const confirmedExcludingMe = await tx.rSVP.count({
+            where: {
+              eventId: event.id,
+              status: "GOING",
+              attendanceState: "CONFIRMED",
+              NOT: { userId: user.id },
+            },
+          });
+
+          if (confirmedExcludingMe >= event.capacity) {
+            if (!event.waitlistEnabled) {
+              return { kind: "full" as const };
+            }
+            attendanceState = "WAITLISTED";
+          } else {
+            attendanceState = "CONFIRMED";
+          }
+        } else {
+          attendanceState = "CONFIRMED";
+        }
+      } else {
+        attendanceState = "CONFIRMED";
+      }
+
+      const rsvp = prev
+        ? await tx.rSVP.update({
+            where: { id: prev.id },
+            data: { status, attendanceState },
+            select: { status: true, attendanceState: true },
+          })
+        : await tx.rSVP.create({
+            data: {
+              status,
+              attendanceState,
+              userId: user.id,
+              eventId: event.id,
+            },
+            select: { status: true, attendanceState: true },
+          });
+
+      const prevWasConfirmedSeat = prev?.status === "GOING" && prev?.attendanceState === "CONFIRMED";
+      const nowIsConfirmedSeat = rsvp.status === "GOING" && rsvp.attendanceState === "CONFIRMED";
+      const freedSeat = prevWasConfirmedSeat && !nowIsConfirmedSeat;
+
+      const promoted = freedSeat ? await promoteWaitlist(tx, event) : [];
+
+      return {
+        kind: "ok" as const,
+        event,
+        prev, // ✅ include prev so we can detect changes
+        rsvp,
+        promoted,
+      };
+    });
+
+    if (result.kind === "notfound") {
+      return NextResponse.json({ message: "Not found" }, { status: 404 });
+    }
+
+    if (result.kind === "full") {
+      return NextResponse.json(
+        { message: "This event is full and waitlist is disabled." },
+        { status: 409 }
+      );
+    }
+
+    const eventUrl = new URL(`/public/events/${encodeURIComponent(slug)}`, base).toString();
+
+    // ✅ only send RSVP email if RSVP/attendance actually changed
+    const changed =
+      !result.prev ||
+      result.prev.status !== result.rsvp.status ||
+      result.prev.attendanceState !== result.rsvp.attendanceState;
+
+    const tasks: Promise<any>[] = [];
+
+    if (changed) {
+      tasks.push(
+        emailRsvpUpdated({
+          to: user.email,
+          name: user.name,
           eventTitle: result.event.title,
-          when,
-          where: result.event.locationName,
-          url: eventUrl,
-        }),
-      });
+          eventUrl,
+          status: result.rsvp.status,
+          attendanceState: result.rsvp.attendanceState,
+        }).catch(() => null)
+      );
     }
 
-    if (userEmail && result.newlyWaitlisted) {
-      await sendEmail({
-        to: userEmail,
-        subject: `Waitlisted: ${result.event.title}`,
-        html: waitlistedEmail({ eventTitle: result.event.title, url: eventUrl }),
-      });
-    }
-
+    // ✅ promoted attendees always get the promotion email
     for (const p of result.promoted) {
-      await sendEmail({
-        to: p.email,
-        subject: `You're in: ${result.event.title}`,
-        html: promotedEmail({ eventTitle: result.event.title, when, url: eventUrl }),
-      });
+      const to = p.user?.email;
+      if (!to) continue;
+      tasks.push(
+        emailWaitlistPromoted({
+          to,
+          name: p.user?.name,
+          eventTitle: result.event.title,
+          eventUrl,
+        }).catch(() => null)
+      );
     }
-  } catch (e) {
-    console.error("[rsvp-email-error]", e);
+
+    await Promise.allSettled(tasks);
+
+    return NextResponse.json(
+      {
+        ok: true,
+        rsvp: { status: result.rsvp.status, attendanceState: result.rsvp.attendanceState },
+      },
+      { status: 200 }
+    );
+  } catch (e: any) {
+    return NextResponse.json({ message: e?.message ?? "Server error" }, { status: 500 });
   }
-
-  const canShowCheckIn =
-    result.rsvp.status === "GOING" && result.rsvp.attendanceState === "CONFIRMED";
-
-  return NextResponse.json(
-    {
-      status: result.rsvp.status,
-      attendanceState: result.rsvp.attendanceState,
-      checkInCode: canShowCheckIn ? result.rsvp.checkInCode : null,
-      checkedInAt: canShowCheckIn ? result.rsvp.checkedInAt : null,
-      updatedAt: result.rsvp.updatedAt,
-
-      capacity: result.cap,
-      waitlistEnabled: result.event.waitlistEnabled,
-      confirmedCount: result.confirmedCount,
-      waitlistedCount: result.waitlistedCount,
-      isFull: result.isFull,
-      spotsLeft: result.spotsLeft,
-
-      promotedCount: result.promoted.length,
-    },
-    { status: 200 }
-  );
 }

@@ -2,16 +2,30 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 
-async function resolveSlug(
-  params: { slug: string } | Promise<{ slug: string }>
-): Promise<string> {
+async function resolveSlug(params: { slug: string } | Promise<{ slug: string }>) {
   const { slug } = await Promise.resolve(params);
   return slug;
 }
 
+async function resolveUserId(session: any): Promise<string | null> {
+  const su = session?.user ?? {};
+  const sessionId = su?.id as string | undefined;
+  const sessionEmail = su?.email as string | undefined;
+
+  if (sessionId) return sessionId;
+
+  if (sessionEmail) {
+    const dbUser = await prisma.user.findUnique({
+      where: { email: sessionEmail },
+      select: { id: true },
+    });
+    return dbUser?.id ?? null;
+  }
+
+  return null;
+}
+
 // POST /api/events/:slug/checkin body: { code, secret? }
-// - Organizer (logged in) can check in without secret
-// - Staff can check in with secret
 export async function POST(
   req: Request,
   { params }: { params: { slug: string } | Promise<{ slug: string }> }
@@ -24,21 +38,19 @@ export async function POST(
   const secretFromHeader = (req.headers.get("x-checkin-secret") ?? "").trim();
   const secret = secretFromHeader || secretFromBody;
 
-  if (!code) {
-    return NextResponse.json({ error: "Missing code" }, { status: 400 });
-  }
+  if (!code) return NextResponse.json({ error: "Missing code" }, { status: 400 });
 
   const event = await prisma.event.findUnique({
     where: { slug },
     select: { id: true, organizerId: true, checkInSecret: true },
   });
 
-  if (!event) {
-    return NextResponse.json({ error: "Event not found" }, { status: 404 });
-  }
+  if (!event) return NextResponse.json({ error: "Event not found" }, { status: 404 });
 
   const session = await auth();
-  const isOrganizer = !!session?.user?.id && session.user.id === event.organizerId;
+  const userId = await resolveUserId(session);
+
+  const isOrganizer = !!userId && userId === event.organizerId;
   const isStaffWithSecret = !!secret && secret === event.checkInSecret;
 
   if (!isOrganizer && !isStaffWithSecret) {
@@ -60,10 +72,7 @@ export async function POST(
   });
 
   if (!rsvp) {
-    return NextResponse.json(
-      { error: "Invalid code or attendee not confirmed." },
-      { status: 404 }
-    );
+    return NextResponse.json({ error: "Invalid code or attendee not confirmed." }, { status: 404 });
   }
 
   if (rsvp.checkedInAt) {
