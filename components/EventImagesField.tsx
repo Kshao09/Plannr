@@ -6,12 +6,14 @@ export default function EventImagesField({
   cover,
   images,
   onChange,
-  maxImages = 5, // max gallery images stored in event.images
+  maxImages = 5,
+  onUploadingChange,
 }: {
   cover: string;
   images: string[];
   onChange: (next: { cover: string; images: string[] }) => void;
   maxImages?: number;
+  onUploadingChange?: (uploading: boolean) => void; // ✅ NEW (optional)
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -20,8 +22,6 @@ export default function EventImagesField({
   const normalizedCover = (cover ?? "").trim();
   const normalizedImages = (images ?? []).map((x) => (x ?? "").trim()).filter(Boolean);
 
-
-  // show a single grid: cover (if exists) + gallery images (deduped)
   const all = (() => {
     const out: string[] = [];
     if (normalizedCover) out.push(normalizedCover);
@@ -35,7 +35,6 @@ export default function EventImagesField({
   const hasCover = !!normalizedCover;
   const isFull = hasCover && remainingGallery === 0;
 
-
   function openPicker() {
     fileRef.current?.click();
   }
@@ -44,7 +43,6 @@ export default function EventImagesField({
     const fd = new FormData();
     fd.append("file", file);
 
-    // uses your existing upload endpoint
     const res = await fetch("/api/uploads/cover", { method: "POST", body: fd });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || "Upload failed");
@@ -67,10 +65,6 @@ export default function EventImagesField({
 
     setErr(null);
 
-    // Capacity rule:
-    // - cover is stored separately
-    // - gallery is limited to maxImages
-    // If cover is empty, first upload can become cover (so allow +1 slot)
     const coverSlot = normalizedCover ? 0 : 1;
     const totalSlots = coverSlot + remainingGallery;
 
@@ -84,6 +78,8 @@ export default function EventImagesField({
     }
 
     setUploading(true);
+    onUploadingChange?.(true);
+
     try {
       let nextCover = normalizedCover;
       let nextGallery = normalizedImages.filter((u) => u && u !== nextCover);
@@ -92,7 +88,7 @@ export default function EventImagesField({
         const url = await uploadOne(f);
 
         if (!nextCover) {
-          nextCover = url; // first becomes cover if none exists
+          nextCover = url;
         } else if (nextGallery.length < maxImages) {
           nextGallery.push(url);
         }
@@ -104,6 +100,7 @@ export default function EventImagesField({
       setErr(e?.message ?? "Upload failed");
     } finally {
       setUploading(false);
+      onUploadingChange?.(false);
       if (fileRef.current) fileRef.current.value = "";
     }
   }
@@ -115,12 +112,9 @@ export default function EventImagesField({
     const oldCover = normalizedCover;
     if (u === oldCover) return;
 
-    // Remove chosen from gallery (if present), promote to cover,
-    // and push old cover into gallery if it existed (keeping maxImages).
     let nextGallery = normalizedImages.filter((x) => x && x !== u && x !== oldCover);
 
     if (oldCover) {
-      // make space by ensuring <= maxImages - 1 before adding oldCover
       if (nextGallery.length >= maxImages) nextGallery = nextGallery.slice(0, maxImages - 1);
       nextGallery = [oldCover, ...nextGallery];
     }
@@ -133,7 +127,6 @@ export default function EventImagesField({
     const u = (url ?? "").trim();
     if (!u) return;
 
-    // If deleting cover: promote first gallery image (if any) to cover
     if (u === normalizedCover) {
       const g = normalizedImages.filter((x) => x && x !== normalizedCover);
       const newCover = g[0] ?? "";
@@ -142,7 +135,6 @@ export default function EventImagesField({
       return;
     }
 
-    // deleting from gallery
     const nextGallery = normalizedImages.filter((x) => x && x !== u && x !== normalizedCover);
     onChange({ cover: normalizedCover, images: nextGallery });
   }
@@ -169,11 +161,11 @@ export default function EventImagesField({
             disabled={uploading || isFull}
             className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm disabled:opacity-50"
             title={isFull ? "Gallery is full" : "Upload images"}
-            >
+          >
             {uploading
-                ? "Uploading..."
-                : `Add images (${hasCover ? remainingGallery : remainingGallery + 1} slots)`}
-            </button>
+              ? "Uploading..."
+              : `Add images (${hasCover ? remainingGallery : remainingGallery + 1} slots)`}
+          </button>
         </div>
       </div>
 
@@ -189,6 +181,7 @@ export default function EventImagesField({
               return (
                 <div key={url} className="rounded-2xl border border-white/10 bg-black/20 p-2">
                   <div className="relative overflow-hidden rounded-xl border border-white/10">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={url} alt="Event" className="h-[110px] w-full object-cover" />
 
                     {isCover && (

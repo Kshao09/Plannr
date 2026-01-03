@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ToastProvider";
 import { EVENT_CATEGORIES } from "@/lib/EventCategories";
+import EventImagesField from "@/components/EventImagesField";
 
 function toISOFromDatetimeLocal(v: string) {
   const d = new Date(v);
@@ -15,6 +16,7 @@ export default function CreateEventForm() {
   const toast = useToast();
 
   const [saving, setSaving] = useState(false);
+  const [imagesUploading, setImagesUploading] = useState(false);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -24,35 +26,12 @@ export default function CreateEventForm() {
   const [address, setAddress] = useState("");
   const [category, setCategory] = useState("");
 
-  // ✅ NEW
   const [capacity, setCapacity] = useState<string>("");
   const [waitlistEnabled, setWaitlistEnabled] = useState<boolean>(true);
 
-  // images
-  const [images, setImages] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
-
-  useEffect(() => {
-    const urls = images.map((f) => URL.createObjectURL(f));
-    setPreviews(urls);
-    return () => urls.forEach((u) => URL.revokeObjectURL(u));
-  }, [images]);
-
-  function onPickImages(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    if (!files.length) return;
-
-    const onlyImages = files.filter((f) => f.type.startsWith("image/"));
-    if (onlyImages.length !== files.length) toast.error("Only image files are allowed.", "Invalid");
-
-    const merged = [...images, ...onlyImages];
-    setImages(merged.slice(0, 5));
-    e.target.value = "";
-  }
-
-  function removeImage(idx: number) {
-    setImages((prev) => prev.filter((_, i) => i !== idx));
-  }
+  // ✅ Blob URLs (same concept as Edit)
+  const [cover, setCover] = useState<string>("");
+  const [images, setImages] = useState<string[]>([]); // gallery (max 5)
 
   const payload = useMemo(() => {
     const cap = capacity.trim() ? Number(capacity) : null;
@@ -65,8 +44,6 @@ export default function CreateEventForm() {
       locationName: locationName.trim() || null,
       address: address.trim() || null,
       category: category || null,
-
-      // ✅ NEW
       capacity: cap != null && Number.isFinite(cap) ? Math.max(1, Math.floor(cap)) : null,
       waitlistEnabled,
     };
@@ -80,33 +57,43 @@ export default function CreateEventForm() {
     const e = new Date(payload.endAt as string).getTime();
     if (Number.isNaN(s) || Number.isNaN(e)) return "Invalid Start/End time.";
     if (e <= s) return "End must be after Start.";
-    if (images.length > 5) return "Max 5 images.";
 
     if (payload.capacity != null && payload.capacity < 1) return "Capacity must be >= 1.";
+
+    // gallery limit (cover is separate)
+    if ((images?.length ?? 0) > 5) return "Max 5 gallery images.";
+
+    if (imagesUploading) return "Please wait for image uploads to finish.";
 
     return null;
   }
 
-  async function uploadImages(slug: string) {
-    if (images.length === 0) return;
+  async function persistImages(slug: string) {
+    // Save cover + gallery URLs into the event (same storage as Edit)
+    const res = await fetch(`/api/events/${encodeURIComponent(slug)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image: cover || null,
+        images: Array.isArray(images) ? images : [],
+      }),
+    });
 
-    const fd = new FormData();
-    images.forEach((file) => fd.append("images", file));
-
-    const res = await fetch(`/api/events/${slug}/images`, { method: "POST", body: fd });
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data?.error ?? "Failed to upload images.");
+      throw new Error(data?.error ?? "Failed to save images.");
     }
   }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+
     const v = validate();
     if (v) return toast.error(v, "Create failed");
 
     setSaving(true);
     try {
+      // 1) create event (no filesystem uploads here)
       const res = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -121,11 +108,12 @@ export default function CreateEventForm() {
 
       const slug = data?.slug ?? data?.event?.slug ?? data?.data?.slug ?? null;
 
-      if (slug && images.length) await uploadImages(slug);
+      // 2) if we already uploaded blob URLs in the form, persist them into DB
+      if (slug && (cover || (images?.length ?? 0) > 0)) {
+        await persistImages(slug);
+      }
 
       toast.success("Event created!");
-
-      // ✅ Redirect to public details page instead of edit page
       router.push(slug ? `/public/events/${slug}` : "/public/events");
       router.refresh();
     } catch (err: any) {
@@ -218,7 +206,6 @@ export default function CreateEventForm() {
           />
         </label>
 
-        {/* ✅ NEW: Capacity + Waitlist */}
         <div className="grid gap-4 md:grid-cols-2">
           <label className="text-sm text-zinc-300">
             Capacity (blank = unlimited)
@@ -241,57 +228,24 @@ export default function CreateEventForm() {
           </label>
         </div>
 
-        {/* Images */}
-        <div className="mt-2">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-zinc-300">Images</div>
-            <div className="text-xs text-zinc-500">{images.length}/5</div>
-          </div>
-
-          <div className="mt-2 flex flex-wrap gap-3">
-            {previews.map((src, idx) => (
-              <div
-                key={src}
-                className="relative h-24 w-24 overflow-hidden rounded-xl border border-white/10 bg-black/30"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={src} alt="" className="h-full w-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => removeImage(idx)}
-                  className="absolute right-1 top-1 rounded-lg border border-white/10 bg-black/60 px-2 py-1 text-xs text-white hover:bg-black/80"
-                  aria-label="Remove image"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-
-            <label
-              className={`flex h-24 w-24 cursor-pointer items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/5 text-xs text-zinc-300 hover:bg-white/10 ${
-                images.length >= 5 ? "pointer-events-none opacity-50" : ""
-              }`}
-            >
-              + Add
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={onPickImages}
-                className="hidden"
-                disabled={images.length >= 5}
-              />
-            </label>
-          </div>
-        </div>
+        {/* ✅ SAME as Edit: upload + set cover + delete, all URLs */}
+        <EventImagesField
+          cover={cover}
+          images={images}
+          onUploadingChange={setImagesUploading}
+          onChange={({ cover, images }) => {
+            setCover(cover);
+            setImages(images);
+          }}
+        />
 
         <div className="mt-2 flex gap-2">
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || imagesUploading}
             className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-60"
           >
-            {saving ? "Creating…" : "Create event"}
+            {saving ? "Creating…" : imagesUploading ? "Uploading images…" : "Create event"}
           </button>
 
           <button
