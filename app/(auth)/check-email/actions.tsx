@@ -18,7 +18,9 @@ export async function resendVerificationAction(formData: FormData) {
   });
 
   if (!user) {
-    redirect(`/check-email?email=${encodeURIComponent(email)}&sent=0&resent=1&err=EmailNotFound`);
+    redirect(
+      `/check-email?email=${encodeURIComponent(email)}&sent=0&resent=1&err=EmailNotFound`
+    );
   }
 
   // Already verified -> just go login
@@ -40,7 +42,13 @@ export async function resendVerificationAction(formData: FormData) {
 
   const result = await sendVerificationEmail({ to: email, token });
 
+  const sent = result.ok && !result.skipped;
+  const err =
+    !sent && result.error ? `&err=${encodeURIComponent(result.error)}` : "";
+
   redirect(
-    `/check-email?email=${encodeURIComponent(email)}&sent=${result.sent ? "1" : "0"}&resent=1`
+    `/check-email?email=${encodeURIComponent(email)}&sent=${
+      sent ? "1" : "0"
+    }&resent=1${err}`
   );
 }

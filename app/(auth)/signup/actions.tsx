@@ -64,10 +64,11 @@ export async function signupAction(
   }
 
   // Send email separately (don’t block signup UX)
+    // Send email separately (don’t block signup UX)
   let sent = false;
   try {
     const result = await sendVerificationEmail({ to: email, token });
-    sent = !!result.sent;
+    sent = result.ok && !result.skipped;
   } catch (err) {
     console.error("[signupAction] email failed:", err);
     sent = false;
