@@ -10,15 +10,17 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("[GLOBAL ERROR]", error);
+    console.error("[app/error.tsx] GLOBAL ERROR", error);
   }, [error]);
 
   return (
     <html>
       <body className="bg-black text-white">
         <div className="mx-auto max-w-2xl px-6 py-16">
-          <h1 className="text-2xl font-semibold">App crashed (server render)</h1>
-          <p className="mt-3 text-sm text-zinc-300">{error.message || "Hidden in production"}</p>
+          <h1 className="text-2xl font-semibold">Server render crashed</h1>
+          <p className="mt-3 text-sm text-zinc-300">
+            {error.message || "Hidden in production"}
+          </p>
           {error.digest ? (
             <p className="mt-2 text-xs text-zinc-400">Digest: {error.digest}</p>
           ) : null}
