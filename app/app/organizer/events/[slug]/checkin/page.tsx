@@ -1,3 +1,4 @@
+// app/organizer/events/[slug]/checkin/page.tsx
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
@@ -17,11 +18,13 @@ export default async function OrganizerCheckInPage({
     console.log("[organizer-checkin] slug:", slug);
 
     const session = await auth();
-    console.log("[organizer-checkin] session user:", !!session?.user);
+    console.log("[organizer-checkin] has session user:", !!session?.user);
 
     if (!session?.user) redirect("/login");
 
+    // Robust userId resolution (prod sometimes misses session.user.id)
     let viewerId = (session.user as any)?.id as string | undefined;
+
     if (!viewerId && session.user.email) {
       const me = await prisma.user.findUnique({
         where: { email: session.user.email },
@@ -29,6 +32,7 @@ export default async function OrganizerCheckInPage({
       });
       viewerId = me?.id ?? undefined;
     }
+
     console.log("[organizer-checkin] viewerId:", viewerId);
 
     if (!viewerId) redirect("/login");
@@ -71,7 +75,7 @@ export default async function OrganizerCheckInPage({
       checkInSecret: event.checkInSecret,
       capacity: event.capacity,
       waitlistEnabled: event.waitlistEnabled,
-      rsvps: event.rsvps.map((r) => ({
+      rsvps: (event.rsvps ?? []).map((r) => ({
         id: r.id,
         status: r.status,
         attendanceState: r.attendanceState,
@@ -86,15 +90,16 @@ export default async function OrganizerCheckInPage({
       <main className="mx-auto w-full max-w-6xl px-4 py-10">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold">Organizer check-in</h1>
+            <h1 className="text-2xl font-bold text-white">Organizer check-in</h1>
             <p className="mt-1 text-sm text-zinc-300">
-              Manage check-ins for <span className="font-semibold">{safeEvent.title}</span>
+              Manage check-ins for{" "}
+              <span className="font-semibold text-white">{safeEvent.title}</span>
             </p>
           </div>
 
           <Link
             href={`/organizer/events/${safeEvent.slug}/edit`}
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/10"
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white hover:bg-white/10"
           >
             Edit event
           </Link>
@@ -105,6 +110,6 @@ export default async function OrganizerCheckInPage({
     );
   } catch (err) {
     console.error("[organizer-checkin] SSR crash:", err);
-    throw err; // Next will show error.tsx
+    throw err; // Next will show error boundary (error.tsx / app/error.tsx)
   }
 }
