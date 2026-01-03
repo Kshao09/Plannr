@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendEmail } from "@/lib/email";
+import { sendEmail } from "@/lib/mailer";
 import { reminderEmail } from "@/lib/emailTemplates";
 
 function fmt(d: Date) {

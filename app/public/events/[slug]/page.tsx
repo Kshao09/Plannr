@@ -7,8 +7,8 @@ import EventRSVP from "@/components/EventRSVP";
 import EventAttendees from "@/components/EventAttendees";
 import EventImageCarousel from "@/components/EventImageCarousel";
 import QrImage from "@/components/QrImage";
-import { getBaseUrl } from "@/lib/siteUrl";
 import DeleteEventButton from "@/components/DeleteEventButton";
+import { getBaseUrl } from "@/lib/siteUrl";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

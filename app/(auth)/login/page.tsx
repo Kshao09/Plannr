@@ -98,7 +98,7 @@ export default async function LoginPage({
           </button>
         </form>
 
-        <Link href="/reset-password" className="text-sm underline opacity-80 hover:opacity-100">
+        <Link href="/forgot-password" className="text-sm underline opacity-80 hover:opacity-100">
           Forgot password?
         </Link>
 

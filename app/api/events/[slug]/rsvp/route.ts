@@ -53,7 +53,11 @@ async function promoteWaitlist(
 ) {
   if (!event.waitlistEnabled) return [];
 
-  if (typeof event.capacity !== "number" || !Number.isFinite(event.capacity) || event.capacity <= 0) {
+  if (
+    typeof event.capacity !== "number" ||
+    !Number.isFinite(event.capacity) ||
+    event.capacity <= 0
+  ) {
     return [];
   }
 
@@ -120,16 +124,12 @@ export async function POST(
           title: true,
           capacity: true,
           waitlistEnabled: true,
-
-          // ✅ needed for conflict checks
           startAt: true,
           endAt: true,
         },
       });
 
-      if (!event) {
-        return { kind: "notfound" as const };
-      }
+      if (!event) return { kind: "notfound" as const };
 
       const prev = await tx.rSVP.findUnique({
         where: { userId_eventId: { userId: user.id, eventId: event.id } },
@@ -150,9 +150,7 @@ export async function POST(
           });
 
           if (confirmedExcludingMe >= event.capacity) {
-            if (!event.waitlistEnabled) {
-              return { kind: "full" as const };
-            }
+            if (!event.waitlistEnabled) return { kind: "full" as const };
             attendanceState = "WAITLISTED";
           } else {
             attendanceState = "CONFIRMED";
@@ -164,26 +162,21 @@ export async function POST(
         attendanceState = "CONFIRMED";
       }
 
-      // ✅ Conflict check ONLY when user is about to TAKE a confirmed seat
-      const prevWasConfirmedSeat =
-        prev?.status === "GOING" && prev?.attendanceState === "CONFIRMED";
-      const nowIsConfirmedSeat = status === "GOING" && attendanceState === "CONFIRMED";
+      // ✅ Treat GOING or MAYBE as "busy" and prevent overlapping busy RSVPs
+      const busyStatuses: RSVPStatus[] = ["GOING", "MAYBE"];
+      const prevWasBusy = !!prev && busyStatuses.includes(prev.status as RSVPStatus);
+      const nowIsBusy = busyStatuses.includes(status);
 
-      if (
-        nowIsConfirmedSeat &&
-        !prevWasConfirmedSeat &&
-        event.startAt &&
-        event.endAt
-      ) {
+      // Only check conflicts when user is becoming "busy" (Declined -> Going/Maybe, or none -> Going/Maybe)
+      if (nowIsBusy && !prevWasBusy && event.startAt && event.endAt) {
         const conflicts: ConflictItem[] = [];
 
-        // 1) Conflicts with other RSVPs (GOING + CONFIRMED)
+        // 1) Conflicts with other RSVPs (GOING or MAYBE; any attendanceState)
         const rsvpConflicts = await tx.rSVP.findMany({
           where: {
             userId: user.id,
             eventId: { not: event.id },
-            status: "GOING",
-            attendanceState: "CONFIRMED",
+            status: { in: busyStatuses },
             event: {
               startAt: { lt: event.endAt },
               endAt: { gt: event.startAt },
@@ -253,41 +246,23 @@ export async function POST(
             select: { status: true, attendanceState: true },
           })
         : await tx.rSVP.create({
-            data: {
-              status,
-              attendanceState,
-              userId: user.id,
-              eventId: event.id,
-            },
+            data: { status, attendanceState, userId: user.id, eventId: event.id },
             select: { status: true, attendanceState: true },
           });
 
-      const prevWasConfirmedSeat2 =
-        prev?.status === "GOING" && prev?.attendanceState === "CONFIRMED";
-      const nowIsConfirmedSeat2 =
-        rsvp.status === "GOING" && rsvp.attendanceState === "CONFIRMED";
-      const freedSeat = prevWasConfirmedSeat2 && !nowIsConfirmedSeat2;
+      const prevWasConfirmedSeat = prev?.status === "GOING" && prev?.attendanceState === "CONFIRMED";
+      const nowIsConfirmedSeat = rsvp.status === "GOING" && rsvp.attendanceState === "CONFIRMED";
+      const freedSeat = prevWasConfirmedSeat && !nowIsConfirmedSeat;
 
       const promoted = freedSeat ? await promoteWaitlist(tx, event) : [];
 
-      return {
-        kind: "ok" as const,
-        event,
-        prev, // ✅ include prev so we can detect changes
-        rsvp,
-        promoted,
-      };
+      return { kind: "ok" as const, event, prev, rsvp, promoted };
     });
 
-    if (result.kind === "notfound") {
-      return NextResponse.json({ message: "Not found" }, { status: 404 });
-    }
+    if (result.kind === "notfound") return NextResponse.json({ message: "Not found" }, { status: 404 });
 
     if (result.kind === "full") {
-      return NextResponse.json(
-        { message: "This event is full and waitlist is disabled." },
-        { status: 409 }
-      );
+      return NextResponse.json({ message: "This event is full and waitlist is disabled." }, { status: 409 });
     }
 
     if (result.kind === "conflict") {
@@ -308,7 +283,6 @@ export async function POST(
 
     const eventUrl = new URL(`/public/events/${encodeURIComponent(slug)}`, base).toString();
 
-    // ✅ only send RSVP email if RSVP/attendance actually changed
     const changed =
       !result.prev ||
       result.prev.status !== result.rsvp.status ||
@@ -329,7 +303,6 @@ export async function POST(
       );
     }
 
-    // ✅ promoted attendees always get the promotion email
     for (const p of result.promoted) {
       const to = p.user?.email;
       if (!to) continue;
@@ -346,10 +319,7 @@ export async function POST(
     await Promise.allSettled(tasks);
 
     return NextResponse.json(
-      {
-        ok: true,
-        rsvp: { status: result.rsvp.status, attendanceState: result.rsvp.attendanceState },
-      },
+      { ok: true, rsvp: { status: result.rsvp.status, attendanceState: result.rsvp.attendanceState } },
       { status: 200 }
     );
   } catch (e: any) {

@@ -1,7 +1,9 @@
+// app/api/events/[slug]/route.ts
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { getBaseUrlFromRequest } from "@/lib/siteUrl";
 import { emailEventCancelled, emailEventUpdated } from "@/lib/rsvpEmails";
 
 export const runtime = "nodejs";
@@ -32,13 +34,6 @@ function has(obj: any, key: string) {
   return Object.prototype.hasOwnProperty.call(obj ?? {}, key);
 }
 
-function getBaseUrlFromRequest(req: Request) {
-  const h = new Headers(req.headers);
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  return `${proto}://${host}`;
-}
-
 function isValidDate(d: any) {
   return d instanceof Date && !Number.isNaN(d.getTime());
 }
@@ -52,7 +47,11 @@ type EventSnapshot = {
   waitlistEnabled: boolean;
 };
 
-type Change = { field: "time" | "location" | "capacity" | "waitlistEnabled"; from: string; to: string };
+type Change = {
+  field: "time" | "location" | "capacity" | "waitlistEnabled";
+  from: string;
+  to: string;
+};
 
 function fmtIsoOrEmpty(d: Date | null) {
   return d ? d.toISOString() : "";
@@ -112,7 +111,7 @@ function diffEvent(before: EventSnapshot, after: EventSnapshot): Change[] {
 }
 
 async function getRsvpRecipients(eventId: string) {
-  // ✅ Only GOING and MAYBE
+  // Only GOING and MAYBE
   const rows = await prisma.rSVP.findMany({
     where: {
       eventId,
@@ -129,6 +128,7 @@ async function getRsvpRecipients(eventId: string) {
     if (!map.has(key)) map.set(key, { email: raw, name: r.user?.name ?? null });
   }
 
+  // ✅ FIX (your pasted copy had `return [.map.values()]`)
   return [...map.values()];
 }
 
@@ -179,26 +179,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
   if (has(body, "description")) data.description = body.description ? String(body.description) : null;
 
   if (has(body, "startAt")) {
-    if (!body.startAt) data.startAt = undefined;
-    else {
-      const d = new Date(body.startAt);
-      if (!isValidDate(d)) return NextResponse.json({ error: "Invalid startAt" }, { status: 400 });
-      data.startAt = d;
-    }
+    const d = body.startAt ? new Date(body.startAt) : null;
+    if (d && !isValidDate(d)) return NextResponse.json({ error: "Invalid startAt" }, { status: 400 });
+    data.startAt = d;
   }
 
   if (has(body, "endAt")) {
-    if (!body.endAt) data.endAt = undefined;
-    else {
-      const d = new Date(body.endAt);
-      if (!isValidDate(d)) return NextResponse.json({ error: "Invalid endAt" }, { status: 400 });
-      data.endAt = d;
-    }
+    const d = body.endAt ? new Date(body.endAt) : null;
+    if (d && !isValidDate(d)) return NextResponse.json({ error: "Invalid endAt" }, { status: 400 });
+    data.endAt = d;
   }
 
   if (has(body, "locationName")) data.locationName = body.locationName ? String(body.locationName) : null;
   if (has(body, "address")) data.address = body.address ? String(body.address) : null;
   if (has(body, "category")) data.category = body.category ? String(body.category) : null;
+  if (has(body, "image")) data.image = body.image ? String(body.image) : null;
 
   if (has(body, "capacity")) {
     if (body.capacity === null || body.capacity === "") {
@@ -237,7 +232,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
     waitlistEnabled: updated.waitlistEnabled,
   };
 
-  // ✅ Only email if one of: time/location/capacity/waitlistEnabled changed
+  // Only email if one of: time/location/capacity/waitlistEnabled changed
   const changes = diffEvent(before, after);
   if (changes.length > 0) {
     const baseUrl = getBaseUrlFromRequest(req);
@@ -267,8 +262,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
 
   revalidatePath("/public/events");
   revalidatePath(`/public/events/${slug}`);
+  revalidatePath(`/public/events/${updated.slug}`);
 
   return NextResponse.json({ ok: true, slug: updated.slug });
+}
+
+// ✅ Compatibility: allow edit forms that still use PUT
+export async function PUT(req: Request, ctx: { params: Promise<{ slug: string }> }) {
+  return PATCH(req, ctx);
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -301,7 +302,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ slug:
   const baseUrl = getBaseUrlFromRequest(req);
   const listUrl = `${baseUrl}/public/events`;
 
-  // ✅ Only notify GOING + MAYBE
+  // Only notify GOING + MAYBE
   const recipients = await getRsvpRecipients(event.id);
   if (recipients.length > 0) {
     try {

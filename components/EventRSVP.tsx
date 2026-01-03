@@ -34,26 +34,24 @@ function fmt(d: Date) {
 function ConflictModal({
   open,
   loading,
-  attemptedStatus,
   message,
   conflicts,
   onClose,
-  onSetMaybe,
+  onDecline,
 }: {
   open: boolean;
   loading: boolean;
-  attemptedStatus: RSVPStatus;
   message?: string;
   conflicts: Conflict[];
   onClose: () => void;
-  onSetMaybe: () => void;
+  onDecline: () => void;
 }) {
   if (!open) return null;
 
   const title = "Schedule conflict";
   const desc =
     message?.trim() ||
-    "You can’t RSVP “Going” to overlapping events. Choose another option below.";
+    "You can’t RSVP “Going” or “Maybe” to overlapping events. Decline this event or update your other RSVP.";
 
   return (
     <div
@@ -128,9 +126,7 @@ function ConflictModal({
             </ul>
 
             {conflicts.length > 5 ? (
-              <div className="mt-2 text-xs text-zinc-500">
-                …and {conflicts.length - 5} more.
-              </div>
+              <div className="mt-2 text-xs text-zinc-500">…and {conflicts.length - 5} more.</div>
             ) : null}
           </div>
         ) : null}
@@ -143,17 +139,14 @@ function ConflictModal({
             Open calendar
           </Link>
 
-          {/* Only show “Set to Maybe” if they attempted GOING */}
-          {attemptedStatus === "GOING" ? (
-            <button
-              type="button"
-              onClick={onSetMaybe}
-              disabled={loading}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 hover:bg-white/10 disabled:opacity-60"
-            >
-              Set to Maybe
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={onDecline}
+            disabled={loading}
+            className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/20 disabled:opacity-60"
+          >
+            Decline this event
+          </button>
 
           <button
             type="button"
@@ -187,7 +180,7 @@ export default function EventRSVP({
   const [attendanceState, setAttendanceState] = useState<AttendanceState>(initial.attendanceState);
   const [pending, startTransition] = useTransition();
 
-  // ✅ modal state for schedule conflicts
+  // conflict modal state
   const [conflictOpen, setConflictOpen] = useState(false);
   const [conflictMessage, setConflictMessage] = useState<string | undefined>(undefined);
   const [conflictList, setConflictList] = useState<Conflict[]>([]);
@@ -221,7 +214,6 @@ export default function EventRSVP({
           setStatus(prevStatus);
           setAttendanceState(prevState);
 
-          // ✅ show modal for time conflicts
           if (res.status === 409) {
             setConflictMessage(data?.message);
             setConflictList(Array.isArray(data?.conflicts) ? (data.conflicts as Conflict[]) : []);
@@ -259,7 +251,6 @@ export default function EventRSVP({
 
   const base =
     "rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-100 transition hover:bg-white/10 disabled:opacity-60 disabled:hover:bg-white/5";
-
   const active = "border-white/20 bg-white/10 ring-2 ring-white/10";
 
   const computedDisabled = !!disabled || pending;
@@ -276,9 +267,7 @@ export default function EventRSVP({
           ) : null}
         </div>
 
-        <div className="text-xs text-zinc-400">
-          {pending ? "Saving..." : `Current: ${label(status)}`}
-        </div>
+        <div className="text-xs text-zinc-400">{pending ? "Saving..." : `Current: ${label(status)}`}</div>
       </div>
 
       {disabledReason ? (
@@ -319,17 +308,16 @@ export default function EventRSVP({
       <ConflictModal
         open={conflictOpen}
         loading={pending}
-        attemptedStatus={attempted}
         message={conflictMessage}
         conflicts={conflictList}
         onClose={() => {
           if (!pending) setConflictOpen(false);
         }}
-        onSetMaybe={() => {
+        onDecline={() => {
           if (pending) return;
           setConflictOpen(false);
-          // send MAYBE as a fallback
-          update("MAYBE");
+          // valid fallback when GOING/MAYBE conflicts
+          update("DECLINED");
         }}
       />
     </div>
