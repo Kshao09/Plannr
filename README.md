@@ -2,8 +2,6 @@
 
 A full-stack event platform where **organizers** can create/manage events (with cover images), and **members** can discover events, RSVP (including waitlist flows), and check in via **QR codes**. Built with the Next.js App Router, Prisma, and PostgreSQL—ready for local dev and Vercel deployment.
 
-> Rename “Plannr” to your actual project name if different.
-
 ---
 
 ## Table of Contents
