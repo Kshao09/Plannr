@@ -23,7 +23,7 @@ A full-stack event platform where **organizers** can create/manage events (with 
 ---
 
 ## Demo
-- **Live**: https://plannr-qzjyzxf88-kenny-shaos-projects.vercel.app/
+- **Live**: https://plannr-khaki.vercel.app
 - **Local**: `http://localhost:3000`
 
 ---
