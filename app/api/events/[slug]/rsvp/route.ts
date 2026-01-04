@@ -1,13 +1,22 @@
+// app/api/events/[slug]/rsvp/route.ts
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getBaseUrlFromRequest } from "@/lib/siteUrl";
 import { emailRsvpUpdated, emailWaitlistPromoted } from "@/lib/rsvpEmails";
 
+import { getClientIp } from "@/lib/ip";
+import { enforceRateLimit, limiters } from "@/lib/rateLimit";
+import { beginIdempotency, finishIdempotency } from "@/lib/idempotency";
+import { sendEmailOnce } from "@/lib/emailOutbox";
+import type { Prisma } from "@prisma/client";
+
 export const runtime = "nodejs";
 
 type RSVPStatus = "GOING" | "MAYBE" | "DECLINED";
 type AttendanceState = "CONFIRMED" | "WAITLISTED";
+
+type Tx = Prisma.TransactionClient;
 
 function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) {
   return bStart < aEnd && bEnd > aStart;
@@ -47,10 +56,15 @@ async function resolveUser(session: any) {
   return null;
 }
 
+type PromotedItem = {
+  id: string;
+  user: { email: string | null; name: string | null };
+};
+
 async function promoteWaitlist(
-  tx: any,
+  tx: Tx,
   event: { id: string; capacity: number | null; waitlistEnabled: boolean }
-) {
+): Promise<PromotedItem[]> {
   if (!event.waitlistEnabled) return [];
 
   if (
@@ -100,10 +114,17 @@ export async function POST(
   const { slug } = await Promise.resolve(params);
 
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  if (!session?.user) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
 
   const user = await resolveUser(session);
-  if (!user?.id || !user.email) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  if (!user?.id || !user.email) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+  const userEmail: string = user.email; // ✅ now string (not null)
+
+  const ip = getClientIp(req);
 
   const body = await req.json().catch(() => ({}));
   const status = String(body?.status ?? "").toUpperCase() as RSVPStatus;
@@ -112,10 +133,59 @@ export async function POST(
     return NextResponse.json({ message: "Invalid RSVP status" }, { status: 400 });
   }
 
+  // ---------- Rate limits ----------
+  const mergedHeaders = new Headers();
+
+  const rl1 = await enforceRateLimit({
+    limiter: limiters.rsvpIpMinute,
+    key: `rsvp:ip:${ip}`,
+    message: "Too many RSVP updates from this IP. Try again in a bit.",
+  });
+  rl1.headers.forEach((v, k) => mergedHeaders.set(k, v));
+  if (!rl1.ok) return rl1.response;
+
+  const rl2 = await enforceRateLimit({
+    limiter: limiters.rsvpUserMinute,
+    key: `rsvp:user:${user.id}`,
+    message: "You’re changing RSVP too fast. Please slow down.",
+  });
+  rl2.headers.forEach((v, k) => mergedHeaders.set(k, v));
+  if (!rl2.ok) return rl2.response;
+
+  const rl3 = await enforceRateLimit({
+    limiter: limiters.rsvpEventMinute,
+    key: `rsvp:event:${slug}`,
+    message: "This event is receiving too many RSVP updates right now. Try again shortly.",
+  });
+  rl3.headers.forEach((v, k) => mergedHeaders.set(k, v));
+  if (!rl3.ok) return rl3.response;
+
+  // ---------- Idempotency (optional) ----------
+  const idem = await beginIdempotency({
+    req,
+    route: `POST:/api/events/${slug}/rsvp:${user.id}:${status}`,
+    userId: user.id,
+    ttlSeconds: 2 * 60,
+  });
+
+  if (idem.kind === "replay" || idem.kind === "inflight") {
+    mergedHeaders.forEach((v, k) => idem.response.headers.set(k, v));
+    return idem.response;
+  }
+
+  const respond = async (payload: any, statusCode: number) => {
+    await finishIdempotency({
+      recordId: idem.kind === "claimed" ? idem.recordId : undefined,
+      statusCode,
+      response: payload,
+    });
+    return NextResponse.json(payload, { status: statusCode, headers: mergedHeaders });
+  };
+
   const base = getBaseUrlFromRequest(req);
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: Tx) => {
       const event = await tx.event.findUnique({
         where: { slug },
         select: {
@@ -162,16 +232,15 @@ export async function POST(
         attendanceState = "CONFIRMED";
       }
 
-      // ✅ Treat GOING or MAYBE as "busy" and prevent overlapping busy RSVPs
+      // Treat GOING or MAYBE as "busy" and prevent overlapping busy RSVPs
       const busyStatuses: RSVPStatus[] = ["GOING", "MAYBE"];
       const prevWasBusy = !!prev && busyStatuses.includes(prev.status as RSVPStatus);
       const nowIsBusy = busyStatuses.includes(status);
 
-      // Only check conflicts when user is becoming "busy" (Declined -> Going/Maybe, or none -> Going/Maybe)
       if (nowIsBusy && !prevWasBusy && event.startAt && event.endAt) {
         const conflicts: ConflictItem[] = [];
 
-        // 1) Conflicts with other RSVPs (GOING or MAYBE; any attendanceState)
+        // 1) Conflicts with other RSVPs
         const rsvpConflicts = await tx.rSVP.findMany({
           where: {
             userId: user.id,
@@ -201,7 +270,7 @@ export async function POST(
           }
         }
 
-        // 2) Conflicts with events the user organizes (treat as busy)
+        // 2) Conflicts with events the user organizes
         const organizedConflicts = await tx.event.findMany({
           where: {
             organizerId: user.id,
@@ -228,7 +297,7 @@ export async function POST(
         if (conflicts.length > 0) {
           const msg = conflicts
             .slice(0, 3)
-            .map((c) => `${c.title} (${fmt(c.startAt)} → ${fmt(c.endAt)})`)
+            .map((c: ConflictItem) => `${c.title} (${fmt(c.startAt)} → ${fmt(c.endAt)})`)
             .join("; ");
 
           return {
@@ -243,33 +312,34 @@ export async function POST(
         ? await tx.rSVP.update({
             where: { id: prev.id },
             data: { status, attendanceState },
-            select: { status: true, attendanceState: true },
+            select: { id: true, status: true, attendanceState: true, updatedAt: true },
           })
         : await tx.rSVP.create({
             data: { status, attendanceState, userId: user.id, eventId: event.id },
-            select: { status: true, attendanceState: true },
+            select: { id: true, status: true, attendanceState: true, updatedAt: true },
           });
 
-      const prevWasConfirmedSeat = prev?.status === "GOING" && prev?.attendanceState === "CONFIRMED";
-      const nowIsConfirmedSeat = rsvp.status === "GOING" && rsvp.attendanceState === "CONFIRMED";
+      const prevWasConfirmedSeat =
+        prev?.status === "GOING" && prev?.attendanceState === "CONFIRMED";
+      const nowIsConfirmedSeat =
+        rsvp.status === "GOING" && rsvp.attendanceState === "CONFIRMED";
       const freedSeat = prevWasConfirmedSeat && !nowIsConfirmedSeat;
 
       const promoted = freedSeat ? await promoteWaitlist(tx, event) : [];
-
       return { kind: "ok" as const, event, prev, rsvp, promoted };
     });
 
-    if (result.kind === "notfound") return NextResponse.json({ message: "Not found" }, { status: 404 });
+    if (result.kind === "notfound") return respond({ message: "Not found" }, 404);
 
     if (result.kind === "full") {
-      return NextResponse.json({ message: "This event is full and waitlist is disabled." }, { status: 409 });
+      return respond({ message: "This event is full and waitlist is disabled." }, 409);
     }
 
     if (result.kind === "conflict") {
-      return NextResponse.json(
+      return respond(
         {
           message: result.message,
-          conflicts: result.conflicts.map((c) => ({
+          conflicts: result.conflicts.map((c: ConflictItem) => ({
             slug: c.slug,
             title: c.title,
             startAt: c.startAt,
@@ -277,7 +347,7 @@ export async function POST(
             kind: c.kind,
           })),
         },
-        { status: 409 }
+        409
       );
     }
 
@@ -288,41 +358,65 @@ export async function POST(
       result.prev.status !== result.rsvp.status ||
       result.prev.attendanceState !== result.rsvp.attendanceState;
 
-    const tasks: Promise<any>[] = [];
+    const tasks: Promise<unknown>[] = [];
 
     if (changed) {
+      const dedupeKey = `rsvp-updated:${result.rsvp.id}:${result.rsvp.updatedAt.toISOString()}`;
+
       tasks.push(
-        emailRsvpUpdated({
-          to: user.email,
-          name: user.name,
-          eventTitle: result.event.title,
-          eventUrl,
-          status: result.rsvp.status,
-          attendanceState: result.rsvp.attendanceState,
+        sendEmailOnce({
+          dedupeKey,
+          kind: "rsvp-updated",
+          to: userEmail,
+          meta: {
+            eventId: result.event.id,
+            slug,
+            status: result.rsvp.status,
+            attendanceState: result.rsvp.attendanceState,
+          },
+          send: () =>
+            emailRsvpUpdated({
+              to: userEmail,
+              name: user.name,
+              eventTitle: result.event.title,
+              eventUrl,
+              status: result.rsvp.status,
+              attendanceState: result.rsvp.attendanceState,
+            }),
         }).catch(() => null)
       );
     }
 
     for (const p of result.promoted) {
-      const to = p.user?.email;
+      const to = (p.user.email ?? "").trim();
       if (!to) continue;
+
+      const dedupeKey = `waitlist-promoted:${p.id}`;
+
       tasks.push(
-        emailWaitlistPromoted({
+        sendEmailOnce({
+          dedupeKey,
+          kind: "waitlist-promoted",
           to,
-          name: p.user?.name,
-          eventTitle: result.event.title,
-          eventUrl,
+          meta: { eventId: result.event.id, slug },
+          send: () =>
+            emailWaitlistPromoted({
+              to,
+              name: p.user.name,
+              eventTitle: result.event.title,
+              eventUrl,
+            }),
         }).catch(() => null)
       );
     }
 
     await Promise.allSettled(tasks);
 
-    return NextResponse.json(
+    return respond(
       { ok: true, rsvp: { status: result.rsvp.status, attendanceState: result.rsvp.attendanceState } },
-      { status: 200 }
+      200
     );
   } catch (e: any) {
-    return NextResponse.json({ message: e?.message ?? "Server error" }, { status: 500 });
+    return respond({ message: e?.message ?? "Server error" }, 500);
   }
 }

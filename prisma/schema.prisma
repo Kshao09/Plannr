@@ -130,6 +130,24 @@ model EmailVerificationToken {
   @@index([expiresAt])
 }
 
+model IdempotencyKey {
+  id         String   @id @default(cuid())
+  route      String
+  key        String
+  userId     String?
+
+  state      String   @default("PENDING") // PENDING | COMPLETED
+  statusCode Int?
+  response   Json?
+
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+
+  @@unique([route, key], name: "route_key")
+  @@index([expiresAt])
+  @@index([userId])
+}
+
 model Account {
   id                String  @id @default(cuid())
   userId            String
@@ -182,4 +200,24 @@ model SavedEvent {
   @@unique([userId, eventId])
   @@index([userId])
   @@index([eventId])
+}
+
+model EmailLog {
+  id        String   @id @default(cuid())
+  dedupeKey String   @unique
+  kind      String
+  to        String
+
+  status    String   @default("PENDING") // PENDING | SENT | FAILED
+  providerId String?
+  error     String?
+
+  meta      Json?
+
+  createdAt DateTime @default(now())
+  sentAt    DateTime?
+
+  @@index([createdAt])
+  @@index([kind])
+  @@index([to])
 }

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import DashboardCalendar from "@/components/DashboardCalendar";
+import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,50 @@ async function getUserContext(session: any) {
   return { userId, role, name, email };
 }
 
+type UpcomingEventRow = Prisma.EventGetPayload<{
+  select: {
+    id: true;
+    slug: true;
+    title: true;
+    startAt: true;
+    locationName: true;
+    organizer: { select: { name: true } };
+  };
+}>;
+
+type MyRsvpRow = Prisma.RSVPGetPayload<{
+  select: {
+    status: true;
+    updatedAt: true;
+    event: {
+      select: {
+        slug: true;
+        title: true;
+        startAt: true;
+        locationName: true;
+      };
+    };
+  };
+}>;
+
+type MyEventRow = Prisma.EventGetPayload<{
+  select: { slug: true; title: true; startAt: true };
+}>;
+
+type SavedPreviewRow = Prisma.SavedEventGetPayload<{
+  select: {
+    createdAt: true;
+    event: {
+      select: {
+        slug: true;
+        title: true;
+        startAt: true;
+        locationName: true;
+      };
+    };
+  };
+}>;
+
 export default async function DashboardPage() {
   const session = await auth();
 
@@ -53,34 +98,35 @@ export default async function DashboardPage() {
 
   const now = new Date();
 
-  const [upcomingEvents, myRsvps, myEvents, savedCount, savedPreview] = await Promise.all([
-    prisma.event.findMany({
-      where: { startAt: { gte: now } },
-      orderBy: { startAt: "asc" },
-      take: 6,
-      select: {
-        id: true,
-        slug: true,
-        title: true,
-        startAt: true,
-        locationName: true,
-        organizer: { select: { name: true } },
-      },
-    }),
+  // ✅ Strongly type each promise so arrays don't become `any[]`
+  const upcomingEventsPromise: Promise<UpcomingEventRow[]> = prisma.event.findMany({
+    where: { startAt: { gte: now } },
+    orderBy: { startAt: "asc" },
+    take: 6,
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+      startAt: true,
+      locationName: true,
+      organizer: { select: { name: true } },
+    },
+  });
 
-    prisma.rSVP.findMany({
-      where: { userId },
-      orderBy: { updatedAt: "desc" },
-      take: 6,
-      select: {
-        status: true,
-        updatedAt: true,
-        event: {
-          select: { slug: true, title: true, startAt: true, locationName: true },
-        },
+  const myRsvpsPromise: Promise<MyRsvpRow[]> = prisma.rSVP.findMany({
+    where: { userId },
+    orderBy: { updatedAt: "desc" },
+    take: 6,
+    select: {
+      status: true,
+      updatedAt: true,
+      event: {
+        select: { slug: true, title: true, startAt: true, locationName: true },
       },
-    }),
+    },
+  });
 
+  const myEventsPromise: Promise<MyEventRow[]> =
     role === "ORGANIZER"
       ? prisma.event.findMany({
           where: { organizerId: userId },
@@ -88,28 +134,35 @@ export default async function DashboardPage() {
           take: 6,
           select: { slug: true, title: true, startAt: true },
         })
-      : Promise.resolve([]),
+      : Promise.resolve([] as MyEventRow[]);
 
-    prisma.savedEvent.count({
-      where: { userId },
-    }),
+  const savedCountPromise: Promise<number> = prisma.savedEvent.count({
+    where: { userId },
+  });
 
-    prisma.savedEvent.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      take: 4,
-      select: {
-        createdAt: true,
-        event: {
-          select: {
-            slug: true,
-            title: true,
-            startAt: true,
-            locationName: true,
-          },
+  const savedPreviewPromise: Promise<SavedPreviewRow[]> = prisma.savedEvent.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    take: 4,
+    select: {
+      createdAt: true,
+      event: {
+        select: {
+          slug: true,
+          title: true,
+          startAt: true,
+          locationName: true,
         },
       },
-    }),
+    },
+  });
+
+  const [upcomingEvents, myRsvps, myEvents, savedCount, savedPreview] = await Promise.all([
+    upcomingEventsPromise,
+    myRsvpsPromise,
+    myEventsPromise,
+    savedCountPromise,
+    savedPreviewPromise,
   ]);
 
   async function signOutAction() {
@@ -204,7 +257,7 @@ export default async function DashboardPage() {
           )}
         </section>
 
-        {/* ✅ My Saved Events (NEW) */}
+        {/* ✅ My Saved Events */}
         <section className="rounded-2xl border border-white/10 bg-white/5 p-6 lg:col-span-3">
           <div className="flex items-center justify-between">
             <div>

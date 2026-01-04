@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ToastProvider";
+import { broadcastRsvpUpdate, getTabId, subscribeRsvpUpdates } from "@/lib/broadcast";
 
 type RSVPStatus = "GOING" | "MAYBE" | "DECLINED" | null;
 type AttendanceState = "CONFIRMED" | "WAITLISTED" | null;
@@ -88,46 +89,33 @@ function ConflictModal({
                 const s = fmt(toDate(c.startAt));
                 const e = fmt(toDate(c.endAt));
                 const tag =
-                  c.kind === "organized" ? "Organizing" : c.kind === "rsvp" ? "RSVP" : null;
-
+                  c.kind === "organized" ? "Organizing" : c.kind === "rsvp" ? "RSVP" : "Busy";
                 return (
-                  <li
-                    key={`${c.slug}-${String(c.startAt)}`}
-                    className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-black/20 p-3"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Link
-                          href={`/public/events/${c.slug}`}
-                          className="truncate text-sm font-semibold text-zinc-100 hover:underline"
-                        >
-                          {c.title}
-                        </Link>
-                        {tag ? (
-                          <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-zinc-300">
-                            {tag}
-                          </span>
-                        ) : null}
+                  <li key={`${c.slug}-${s}`} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-white">{c.title}</div>
+                        <div className="mt-1 text-xs text-zinc-300">
+                          {s} → {e}
+                        </div>
                       </div>
-                      <div className="mt-1 text-xs text-zinc-400">
-                        {s} <span className="text-zinc-600">→</span> {e}
-                      </div>
+                      <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-zinc-200">
+                        {tag}
+                      </span>
                     </div>
 
-                    <Link
-                      href={`/public/events/${c.slug}`}
-                      className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-white/10"
-                    >
-                      View
-                    </Link>
+                    <div className="mt-2">
+                      <Link
+                        href={`/public/events/${encodeURIComponent(c.slug)}`}
+                        className="text-xs font-semibold text-blue-200 hover:underline"
+                      >
+                        View event
+                      </Link>
+                    </div>
                   </li>
                 );
               })}
             </ul>
-
-            {conflicts.length > 5 ? (
-              <div className="mt-2 text-xs text-zinc-500">…and {conflicts.length - 5} more.</div>
-            ) : null}
           </div>
         ) : null}
 
@@ -184,10 +172,30 @@ export default function EventRSVP({
   const [conflictOpen, setConflictOpen] = useState(false);
   const [conflictMessage, setConflictMessage] = useState<string | undefined>(undefined);
   const [conflictList, setConflictList] = useState<Conflict[]>([]);
-  const [attempted, setAttempted] = useState<RSVPStatus>(null);
+  const [_attempted, setAttempted] = useState<RSVPStatus>(null);
+
+  // sync across tabs/windows
+  useEffect(() => {
+    const unsub = subscribeRsvpUpdates((msg) => {
+      if (msg?.type !== "rsvp:update") return;
+      if (msg.slug !== slug) return;
+      if (msg.sender === getTabId()) return;
+
+      setStatus(msg.status);
+      setAttendanceState(msg.attendanceState);
+      router.refresh();
+    });
+    return unsub;
+  }, [slug, router]);
 
   function label(s: RSVPStatus) {
     return s ?? "Not set";
+  }
+
+  function makeIdempotencyKey() {
+    // one key per click attempt
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
   async function update(next: Exclude<RSVPStatus, null>) {
@@ -197,14 +205,17 @@ export default function EventRSVP({
 
       setAttempted(next);
 
+      // optimistic
       setStatus(next);
-      // optimistic default
       setAttendanceState(next === "GOING" ? "CONFIRMED" : null);
 
       try {
         const res = await fetch(`/api/events/${slug}/rsvp`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": makeIdempotencyKey(),
+          },
           body: JSON.stringify({ status: next }),
         });
 
@@ -214,10 +225,22 @@ export default function EventRSVP({
           setStatus(prevStatus);
           setAttendanceState(prevState);
 
+          // rate limit
+          if (res.status === 429) {
+            toast.error(data?.message ?? "Too many requests. Try again shortly.");
+            return;
+          }
+
+          // conflict / inflight / capacity full
           if (res.status === 409) {
-            setConflictMessage(data?.message);
-            setConflictList(Array.isArray(data?.conflicts) ? (data.conflicts as Conflict[]) : []);
-            setConflictOpen(true);
+            const conflicts = Array.isArray(data?.conflicts) ? (data.conflicts as Conflict[]) : [];
+            if (conflicts.length) {
+              setConflictMessage(data?.message);
+              setConflictList(conflicts);
+              setConflictOpen(true);
+              return;
+            }
+            toast.error(data?.message ?? "Conflict. Please try again.");
             return;
           }
 
@@ -225,16 +248,22 @@ export default function EventRSVP({
           return;
         }
 
-        setStatus(data?.rsvp?.status ?? next);
-        setAttendanceState(data?.rsvp?.attendanceState ?? null);
+        const nextStatus = (data?.rsvp?.status ?? next) as RSVPStatus;
+        const nextState = (data?.rsvp?.attendanceState ?? null) as AttendanceState;
 
-        if (data?.rsvp?.status === "GOING" && data?.rsvp?.attendanceState === "WAITLISTED") {
+        setStatus(nextStatus);
+        setAttendanceState(nextState);
+
+        // sync other tabs
+        broadcastRsvpUpdate({ slug, status: nextStatus, attendanceState: nextState });
+
+        if (nextStatus === "GOING" && nextState === "WAITLISTED") {
           toast.success("You’re on the waitlist ✅");
         } else {
           toast.success(
-            next === "GOING"
+            nextStatus === "GOING"
               ? "RSVP set to Going ✅"
-              : next === "MAYBE"
+              : nextStatus === "MAYBE"
               ? "RSVP set to Maybe 🤔"
               : "RSVP set to Declined 🚫"
           );
@@ -267,7 +296,9 @@ export default function EventRSVP({
           ) : null}
         </div>
 
-        <div className="text-xs text-zinc-400">{pending ? "Saving..." : `Current: ${label(status)}`}</div>
+        <div className="text-xs text-zinc-400">
+          {pending ? "Saving..." : `Current: ${label(status)}`}
+        </div>
       </div>
 
       {disabledReason ? (
@@ -316,7 +347,6 @@ export default function EventRSVP({
         onDecline={() => {
           if (pending) return;
           setConflictOpen(false);
-          // valid fallback when GOING/MAYBE conflicts
           update("DECLINED");
         }}
       />

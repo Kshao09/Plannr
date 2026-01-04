@@ -82,6 +82,22 @@ function parseImages(v: any): string[] {
     .slice(0, 5);
 }
 
+// ✅ ADD: type that matches your select
+type EventRow = {
+  id: string;
+  title: string;
+  slug: string;
+  startAt: Date;
+  endAt: Date;
+  locationName: string | null;
+  address: string | null;
+  category: string | null;
+  image: string | null;
+  organizer: { name: string | null } | null;
+  capacity: number | null;
+  waitlistEnabled: boolean;
+};
+
 /**
  * GET /api/events?q=&city=&category=&take=
  */
@@ -120,7 +136,8 @@ export async function GET(req: Request) {
     AND.push({ category: { equals: category, mode: "insensitive" } });
   }
 
-  const rows = await prisma.event.findMany({
+  // ✅ FORCE TYPE HERE
+  const rows: EventRow[] = await prisma.event.findMany({
     where: { AND },
     orderBy: { startAt: "asc" },
     take,
@@ -141,7 +158,7 @@ export async function GET(req: Request) {
   });
 
   return NextResponse.json(
-    rows.map((e) => ({
+    rows.map((e: EventRow) => ({
       id: e.id,
       title: e.title,
       slug: e.slug,

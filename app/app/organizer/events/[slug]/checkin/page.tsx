@@ -4,9 +4,33 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import CheckInClient from "./CheckInClient";
+import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+type EventRow = Prisma.EventGetPayload<{
+  select: {
+    id: true;
+    slug: true;
+    title: true;
+    organizerId: true;
+    checkInSecret: true;
+    capacity: true;
+    waitlistEnabled: true;
+    rsvps: {
+      select: {
+        id: true;
+        status: true;
+        attendanceState: true;
+        checkInCode: true;
+        checkedInAt: true;
+        createdAt: true;
+        user: { select: { id: true; name: true; email: true } };
+      };
+    };
+  };
+}>;
 
 export default async function OrganizerCheckInPage({
   params,
@@ -29,7 +53,7 @@ export default async function OrganizerCheckInPage({
   }
   if (!viewerId) redirect("/login");
 
-  const event = await prisma.event.findUnique({
+  const event: EventRow | null = await prisma.event.findUnique({
     where: { slug },
     select: {
       id: true,

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 
-async function resolveUserId(session: any) {
+async function resolveUserId(session: any): Promise<string | null> {
   const sessionUser = session?.user ?? {};
-  const sessionId = sessionUser?.id as string | undefined;
+  const sessionId = (sessionUser as any)?.id as string | undefined;
   const sessionEmail = sessionUser?.email as string | undefined;
 
   if (sessionId) return sessionId;
@@ -20,14 +21,36 @@ async function resolveUserId(session: any) {
   return null;
 }
 
+type SavedRow = Prisma.SavedEventGetPayload<{
+  select: {
+    event: {
+      select: {
+        id: true;
+        slug: true;
+        title: true;
+        startAt: true;
+        endAt: true;
+        locationName: true;
+        category: true;
+        image: true;
+        organizer: { select: { name: true } };
+      };
+    };
+  };
+}>;
+
 export async function GET() {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const userId = await resolveUserId(session);
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-  const saved = await prisma.savedEvent.findMany({
+  const saved: SavedRow[] = await prisma.savedEvent.findMany({
     where: { userId },
     orderBy: { createdAt: "desc" },
     select: {

@@ -117,8 +117,8 @@ export default async function HomePage() {
     badge: "Open",
   });
 
-  const featured = featuredRaw.map(toLite);
-  const weekend = weekendRaw.map(toLite);
+    const featured: CarouselEvent[] = featuredRaw.map(toLite);
+  const weekend: CarouselEvent[] = weekendRaw.map(toLite);
 
   const fallbackTrending = [
     {
@@ -153,10 +153,12 @@ export default async function HomePage() {
     },
   ] satisfies CarouselEvent[];
 
-  const heroTrending = (featured.length ? featured : fallbackTrending).slice(0, 3).map((e, idx) => {
-    const badge = idx === 2 ? "Featured" : "Open";
-    return { ...e, badge };
-  });
+  const heroTrending: CarouselEvent[] = (featured.length ? featured : fallbackTrending)
+    .slice(0, 3)
+    .map((e: CarouselEvent, idx: number) => {
+      const badge = idx === 2 ? "Featured" : "Open";
+      return { ...e, badge };
+    });
 
   return (
     <div className="relative min-h-screen w-full overflow-x-hidden bg-[#050711] text-white">

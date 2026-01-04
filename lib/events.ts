@@ -1,5 +1,6 @@
 // lib/events.ts
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 
 export type RangeKey = "all" | "today" | "week" | "month" | "upcoming";
 
@@ -125,7 +126,7 @@ export async function getEvents(query: EventsQuery) {
         address: true,
         category: true,
         image: true,
-        organizer: { select: { name: true } }, // ✅ ADD THIS
+        organizer: { select: { name: true } }, // ✅
       },
     }),
   ]);
@@ -135,8 +136,11 @@ export async function getEvents(query: EventsQuery) {
   return { items, total, page, pageSize, totalPages };
 }
 
+type LocRow = Prisma.EventGetPayload<{ select: { locationName: true } }>;
+type CatRow = Prisma.EventGetPayload<{ select: { category: true } }>;
+
 export async function getEventFilterOptions() {
-  const [locRows, catRows] = await Promise.all([
+  const [locRows, catRows]: [LocRow[], CatRow[]] = await Promise.all([
     prisma.event.findMany({
       where: { locationName: { not: null } },
       distinct: ["locationName"],

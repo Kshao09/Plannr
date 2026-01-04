@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 
 async function resolveUser(session: any): Promise<{ userId: string | null; role: string | null }> {
   const su = session?.user ?? {};
-  const sessionId = su?.id as string | undefined;
+  const sessionId = (su as any)?.id as string | undefined;
   const sessionEmail = su?.email as string | undefined;
   const sessionRole = (su as any)?.role as string | undefined;
 
@@ -28,6 +28,13 @@ function csvCell(v: string) {
   return `"${String(v ?? "").replace(/"/g, '""')}"`;
 }
 
+// ✅ add a type for what we SELECT from prisma
+type RSVPRow = {
+  status: "GOING" | "MAYBE" | "DECLINED";
+  createdAt: Date;
+  user: { name: string | null; email: string | null } | null;
+};
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ slug: string }> } // ✅ Promise
@@ -49,7 +56,8 @@ export async function GET(
   const canManage = role === "ORGANIZER" && event.organizerId === userId;
   if (!canManage) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const rsvps = await prisma.rSVP.findMany({
+  // ✅ force the result type so map param isn't implicit any
+  const rsvps: RSVPRow[] = await prisma.rSVP.findMany({
     where: { eventId: event.id },
     orderBy: { createdAt: "asc" },
     select: {
@@ -60,12 +68,14 @@ export async function GET(
   });
 
   const header = ["Name", "Email", "Status", "RSVP At"].map(csvCell).join(",");
-  const rows = rsvps.map((r) =>
+
+  // ✅ annotate r to avoid implicit any (even if your tsconfig is strict)
+  const rows = rsvps.map((r: RSVPRow) =>
     [
       csvCell(r.user?.name ?? ""),
       csvCell(r.user?.email ?? ""),
       csvCell(r.status),
-      csvCell(new Date(r.createdAt).toISOString()),
+      csvCell(r.createdAt.toISOString()), // createdAt is already a Date
     ].join(",")
   );
 

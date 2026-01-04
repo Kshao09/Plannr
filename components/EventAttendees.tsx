@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 
 type Props = {
   eventId: string;
@@ -7,10 +8,18 @@ type Props = {
   canManage: boolean;
 };
 
+type RSVPRow = Prisma.RSVPGetPayload<{
+  select: {
+    status: true;
+    createdAt: true;
+    user: { select: { id: true; name: true; email: true } };
+  };
+}>;
+
 export default async function EventAttendees({ eventId, slug, canManage }: Props) {
   if (!canManage) return null;
 
-  const rsvps = await prisma.rSVP.findMany({
+  const rsvps: RSVPRow[] = await prisma.rSVP.findMany({
     where: { eventId },
     orderBy: { createdAt: "asc" },
     select: {

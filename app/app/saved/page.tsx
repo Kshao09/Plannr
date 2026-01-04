@@ -4,12 +4,13 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import EventCard from "@/components/EventCard";
 import type { EventLite } from "@/components/EventCard";
+import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
-async function resolveUserId(session: any) {
+async function resolveUserId(session: any): Promise<string | null> {
   const sessionUser = session?.user ?? {};
-  const sessionId = sessionUser?.id as string | undefined;
+  const sessionId = (sessionUser as any)?.id as string | undefined;
   const sessionEmail = sessionUser?.email as string | undefined;
 
   if (sessionId) return sessionId;
@@ -24,6 +25,24 @@ async function resolveUserId(session: any) {
 
   return null;
 }
+
+type SavedRow = Prisma.SavedEventGetPayload<{
+  select: {
+    event: {
+      select: {
+        id: true;
+        slug: true;
+        title: true;
+        startAt: true;
+        endAt: true;
+        locationName: true;
+        category: true;
+        image: true;
+        organizer: { select: { name: true } };
+      };
+    };
+  };
+}>;
 
 export default async function SavedPage({
   searchParams,
@@ -46,7 +65,7 @@ export default async function SavedPage({
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
   const currentPage = Math.min(page, totalPages);
 
-  const saved = await prisma.savedEvent.findMany({
+  const saved: SavedRow[] = await prisma.savedEvent.findMany({
     where: { userId },
     orderBy: { createdAt: "desc" },
     skip: (currentPage - 1) * PER_PAGE,

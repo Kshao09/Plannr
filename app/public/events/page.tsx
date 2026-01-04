@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
+
 import { getEventFilterOptions, getEvents } from "@/lib/events";
 import EventsFilters from "@/components/EventFilters";
 import Pagination from "@/components/Pagination";
@@ -10,6 +12,7 @@ import type { EventLite } from "@/components/EventCard";
 export const dynamic = "force-dynamic";
 
 type SP = Record<string, string | string[] | undefined>;
+type SavedIdRow = Prisma.SavedEventGetPayload<{ select: { eventId: true } }>;
 
 function toArrayParam(v: string | string[] | undefined) {
   if (!v) return [];
@@ -35,6 +38,26 @@ async function resolveUserId(session: any) {
   return null;
 }
 
+// ✅ Minimal shape we need from getEvents()
+type EventsItem = {
+  id: string;
+  title: string;
+  slug: string;
+  startAt: string | Date;
+  endAt?: string | Date | null;
+  locationName?: string | null;
+  category?: string | null;
+  image?: string | null;
+  organizer?: { name?: string | null } | null;
+};
+
+type EventsResponse = {
+  page: number;
+  totalPages: number;
+  total: number;
+  items: EventsItem[];
+};
+
 export default async function EventsPage({
   searchParams,
 }: {
@@ -57,25 +80,24 @@ export default async function EventsPage({
   const userId = session?.user ? await resolveUserId(session) : null;
 
   const [data, options] = await Promise.all([
-    getEvents({ page, pageSize, q, range, from, to, loc, category }),
+    getEvents({ page, pageSize, q, range, from, to, loc, category }) as Promise<EventsResponse>,
     getEventFilterOptions(),
   ]);
 
-  // Fetch saved IDs for just these events (if logged in)
+    // Fetch saved IDs for just these events (if logged in)
   const ids = data.items.map((x) => x.id);
-  const savedSet =
-    userId && ids.length
-      ? new Set(
-          (
-            await prisma.savedEvent.findMany({
-              where: { userId, eventId: { in: ids } },
-              select: { eventId: true },
-            })
-          ).map((r) => r.eventId)
-        )
-      : new Set<string>();
 
-  const cards: EventLite[] = data.items.map((e: any) => ({
+  const savedRows: SavedIdRow[] =
+    userId && ids.length
+      ? await prisma.savedEvent.findMany({
+          where: { userId, eventId: { in: ids } },
+          select: { eventId: true },
+        })
+      : [];
+
+  const savedSet = new Set<string>(savedRows.map((r) => r.eventId));
+
+  const cards: EventLite[] = data.items.map((e) => ({
     id: e.id,
     title: e.title,
     slug: e.slug,
