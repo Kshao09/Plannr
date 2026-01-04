@@ -1,24 +1,25 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/ToastProvider";
 
 function normalizeBase(u: string) {
   return u.replace(/\/+$/, "");
 }
 
-function getClientBaseUrl() {
-  const env = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim();
-  if (env) return normalizeBase(/^https?:\/\//i.test(env) ? env : `https://${env}`);
-  if (typeof window !== "undefined") return window.location.origin;
-  return "http://localhost:3000";
+function normalizeEnvOrigin() {
+  const raw = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim();
+  if (!raw) return "";
+  const withProto = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  return normalizeBase(withProto);
 }
 
-function toAbsUrl(maybeRelative: string) {
+function toAbsUrl(maybeRelative: string, origin: string) {
   const t = (maybeRelative ?? "").trim();
   if (!t) return "";
   if (/^https?:\/\//i.test(t)) return t;
-  return new URL(t.startsWith("/") ? t : `/${t}`, getClientBaseUrl()).toString();
+  if (!origin) return ""; // don't guess on SSR/first render
+  return new URL(t.startsWith("/") ? t : `/${t}`, origin).toString();
 }
 
 export default function QrImage({
@@ -41,14 +42,26 @@ export default function QrImage({
   const toast = useToast();
   const [copied, setCopied] = useState(false);
 
-  const finalText = useMemo(() => toAbsUrl(text), [text]);
+  // ✅ stable on SSR + first client render
+  const [origin, setOrigin] = useState<string>(() => normalizeEnvOrigin());
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    setOrigin(window.location.origin);
+  }, []);
+
+  const finalText = useMemo(() => toAbsUrl(text, origin), [text, origin]);
 
   const openUrl = useMemo(() => {
     const o = (openHref ?? "").trim();
-    return o ? toAbsUrl(o) : finalText;
-  }, [openHref, finalText]);
+    return o ? toAbsUrl(o, origin) : finalText;
+  }, [openHref, origin, finalText]);
 
-  const src = useMemo(() => `/api/qr?text=${encodeURIComponent(finalText)}`, [finalText]);
+  const src = useMemo(() => {
+    if (!finalText) return "";
+    return `/api/qr?text=${encodeURIComponent(finalText)}`;
+  }, [finalText]);
 
   async function copy() {
     try {
@@ -61,7 +74,26 @@ export default function QrImage({
     }
   }
 
-  if (!finalText) return null;
+  // If we can't compute an absolute link yet (origin not known), render a stable skeleton
+  if (!finalText) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div
+          className="rounded-xl bg-white/10 animate-pulse"
+          style={{ width: size, height: size }}
+        />
+        {showText ? <div className="mt-2 h-4 w-3/4 rounded bg-white/10 animate-pulse" /> : null}
+        {showActions ? (
+          <div className="mt-3 flex gap-2">
+            <div className="h-8 w-24 rounded-xl bg-white/10 animate-pulse" />
+            <div className="h-8 w-16 rounded-xl bg-white/10 animate-pulse" />
+          </div>
+        ) : null}
+        {/* helps during dev; safe to remove later */}
+        {!mounted ? <div className="mt-2 text-[10px] text-zinc-500">Loading…</div> : null}
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -82,7 +114,7 @@ export default function QrImage({
               type="button"
               disabled
               title="Organizer only"
-              className="inline-flex items-center justify-center whitespace-nowrap rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 opacity-50 cursor-not-allowed"
+              className="inline-flex cursor-not-allowed items-center justify-center whitespace-nowrap rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 opacity-50"
             >
               {openLabel}
             </button>

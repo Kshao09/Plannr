@@ -1,9 +1,23 @@
 import Link from "next/link";
-import { auth, signOut } from "@/auth";
+import type { ReactNode } from "react";
+import { auth } from "@/auth";
 import OrganizerCreateLink from "@/components/OrganizerCreateLink";
+import { signOutAction } from "./_actions/signOutAction";
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const session = await auth();
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+export default async function AppLayout({ children }: { children: ReactNode }) {
+  // Never let auth() crash the whole /app segment
+  let session: any = null;
+  try {
+    session = await auth();
+  } catch (e) {
+    console.error("[app/app/layout] auth() crashed:", e);
+    session = null;
+  }
+
+  const isOrganizer = session?.user?.role === "ORGANIZER";
 
   return (
     <div className="min-h-screen bg-black">
@@ -18,18 +32,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               Events
             </Link>
 
-            {session?.user?.role === "ORGANIZER" ? <OrganizerCreateLink /> : null}
+            {isOrganizer ? <OrganizerCreateLink /> : null}
 
-            <form
-              action={async () => {
-                "use server";
-                await signOut({ redirectTo: "/" });
-              }}
-            >
-              <button className="rounded-xl bg-white px-3 py-2 text-sm font-medium text-black hover:opacity-90">
-                Sign out
-              </button>
-            </form>
+            {session?.user ? (
+              <form action={signOutAction}>
+                <button className="rounded-xl bg-white px-3 py-2 text-sm font-medium text-black hover:opacity-90">
+                  Sign out
+                </button>
+              </form>
+            ) : (
+              <Link href="/login" className="text-sm text-zinc-200 hover:text-white">
+                Sign in
+              </Link>
+            )}
           </nav>
         </div>
       </header>

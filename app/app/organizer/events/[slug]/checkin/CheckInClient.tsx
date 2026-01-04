@@ -1,25 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import dynamic from "next/dynamic";
 import { useToast } from "@/components/ToastProvider";
-
-const QrImage = dynamic(() => import("@/components/QrImage"), { ssr: false });
-
-function getClientOrigin() {
-  const env = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim();
-  if (env) {
-    const withProto = /^https?:\/\//i.test(env) ? env : `https://${env}`;
-    try {
-      const u = new URL(withProto);
-      return `${u.protocol}//${u.host}`; // ✅ origin only (no /app path)
-    } catch {
-      // fall through
-    }
-  }
-  if (typeof window !== "undefined") return window.location.origin;
-  return "http://localhost:3000";
-}
+import QrImage from "@/components/QrImage";
 
 export default function CheckInClient({
   event,
@@ -27,31 +10,26 @@ export default function CheckInClient({
   staffUrl,
 }: {
   event: any;
-  shareUrl?: string;
-  staffUrl?: string;
+  shareUrl?: string; // can be a PATH now
+  staffUrl?: string; // can be a PATH now
 }) {
   const toast = useToast();
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const base = getClientOrigin();
+  const resolvedShare = useMemo(() => {
+    return shareUrl ?? `/public/events/${event.slug}`;
+  }, [shareUrl, event.slug]);
 
-  const resolvedShareUrl = useMemo(() => {
-    if (shareUrl) return shareUrl;
-    return new URL(`/public/events/${event.slug}`, base).toString();
-  }, [shareUrl, event.slug, base]);
+  const resolvedStaff = useMemo(() => {
+    return (
+      staffUrl ??
+      `/checkin/${event.slug}?secret=${encodeURIComponent(event.checkInSecret)}`
+    );
+  }, [staffUrl, event.slug, event.checkInSecret]);
 
-  const resolvedStaffUrl = useMemo(() => {
-    if (staffUrl) return staffUrl;
-    return new URL(
-      `/checkin/${event.slug}?secret=${encodeURIComponent(event.checkInSecret ?? "")}`,
-      base
-    ).toString();
-  }, [staffUrl, event.slug, event.checkInSecret, base]);
-
-  const rsvps = Array.isArray(event?.rsvps) ? event.rsvps : [];
-  const confirmed = rsvps.filter((r: any) => r.attendanceState === "CONFIRMED");
-  const waitlisted = rsvps.filter((r: any) => r.attendanceState === "WAITLISTED");
+  const confirmed = event.rsvps.filter((r: any) => r.attendanceState === "CONFIRMED");
+  const waitlisted = event.rsvps.filter((r: any) => r.attendanceState === "WAITLISTED");
 
   async function onCheckIn() {
     const c = code.trim();
@@ -59,7 +37,7 @@ export default function CheckInClient({
 
     setBusy(true);
     try {
-      const res = await fetch(`/api/events/${encodeURIComponent(event.slug)}/checkin`, {
+      const res = await fetch(`/api/events/${event.slug}/checkin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: c }),
@@ -100,26 +78,23 @@ export default function CheckInClient({
           ) : null}
         </div>
 
-        {/* Example QR usage (keep your existing layout) */}
         <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <div>
             <div className="text-sm font-semibold text-white">Event page (share)</div>
-            <div className="mt-2 break-all text-xs text-zinc-400">{resolvedShareUrl}</div>
-            <div className="mt-3">
-              <QrImage text={resolvedShareUrl} />
+            <div className="mt-2">
+              <QrImage text={resolvedShare} />
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <div>
             <div className="text-sm font-semibold text-white">Staff check-in link</div>
-            <div className="mt-2 break-all text-xs text-zinc-400">{resolvedStaffUrl}</div>
-            <div className="mt-3">
-              <QrImage text={resolvedStaffUrl} />
+            <div className="mt-2">
+              <QrImage text={resolvedStaff} />
             </div>
           </div>
         </div>
 
-        <div className="mt-5 flex items-stretch gap-2">
+        <div className="mt-6 flex items-stretch gap-2">
           <input
             value={code}
             onChange={(e) => setCode(e.target.value)}
@@ -136,8 +111,45 @@ export default function CheckInClient({
           </button>
         </div>
 
-        {/* your attendee lists stay the same */}
-        {/* ... */}
+        <div className="mt-6">
+          <h3 className="text-sm font-semibold text-white">Confirmed attendees</h3>
+          <div className="mt-3 divide-y divide-white/10 rounded-xl border border-white/10">
+            {confirmed.map((r: any) => (
+              <div key={r.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                <div>
+                  <div className="text-sm text-white">{r.user?.name ?? r.user?.email}</div>
+                  <div className="text-xs text-zinc-400">{r.user?.email}</div>
+                  <div className="mt-1 text-xs text-zinc-500">Code: {r.checkInCode}</div>
+                </div>
+                <div className="text-xs">
+                  {r.checkedInAt ? (
+                    <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-emerald-200">
+                      Checked in
+                    </span>
+                  ) : (
+                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-zinc-300">
+                      Not yet
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {event.waitlistEnabled ? (
+          <div className="mt-6">
+            <h3 className="text-sm font-semibold text-white">Waitlist</h3>
+            <div className="mt-3 divide-y divide-white/10 rounded-xl border border-white/10">
+              {waitlisted.map((r: any) => (
+                <div key={r.id} className="px-4 py-3">
+                  <div className="text-sm text-white">{r.user?.name ?? r.user?.email}</div>
+                  <div className="text-xs text-zinc-400">{r.user?.email}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
