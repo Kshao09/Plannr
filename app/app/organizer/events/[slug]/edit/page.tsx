@@ -27,17 +27,27 @@ export default async function EditEventPage({
     select: {
       slug: true,
       organizerId: true,
+
       title: true,
       description: true,
       startAt: true,
       endAt: true,
       locationName: true,
+
       address: true,
+      city: true,
+      state: true,
+
       category: true,
       capacity: true,
       waitlistEnabled: true,
+
+      isRecurring: true,
+      recurrence: true,
+
       image: true,
       images: true,
+
       checkInSecret: true,
     },
   });
@@ -47,7 +57,6 @@ export default async function EditEventPage({
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10">
-      {/* match create page look */}
       <div className="mb-6 flex items-center justify-between">
         <div>
           <div className="text-2xl font-semibold text-white">Edit event</div>
@@ -65,10 +74,18 @@ export default async function EditEventPage({
           startAt: event.startAt ? event.startAt.toISOString() : "",
           endAt: event.endAt ? event.endAt.toISOString() : "",
           locationName: event.locationName ?? "",
+
           address: event.address ?? "",
+          city: event.city ?? "",
+          state: event.state ?? "",
+
           category: event.category ?? "",
           capacity: event.capacity ?? null,
           waitlistEnabled: !!event.waitlistEnabled,
+
+          isRecurring: !!event.isRecurring,
+          recurrence: (event.recurrence as any) ?? null,
+
           image: event.image ?? "",
           images: event.images ?? [],
           checkInSecret: event.checkInSecret ?? "",

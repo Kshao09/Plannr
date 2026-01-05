@@ -6,8 +6,10 @@ import { useToast } from "@/components/ToastProvider";
 import { EVENT_CATEGORIES } from "@/lib/EventCategories";
 import EventImagesField from "@/components/EventImagesField";
 
+type RecurrenceFrequency = "WEEKLY" | "MONTHLY" | "YEARLY";
+
 function toISOFromDatetimeLocal(v: string) {
-  const d = new Date(v);
+  const d = new Date(v); // datetime-local interpreted as local time
   return d.toISOString();
 }
 
@@ -23,11 +25,20 @@ export default function CreateEventForm() {
   const [startAt, setStartAt] = useState("");
   const [endAt, setEndAt] = useState("");
   const [locationName, setLocationName] = useState("");
-  const [address, setAddress] = useState("");
+
+  // ✅ split address fields
+  const [address, setAddress] = useState(""); // street
+  const [city, setCity] = useState("");
+  const [stateCode, setStateCode] = useState("");
+
   const [category, setCategory] = useState("");
 
   const [capacity, setCapacity] = useState<string>("");
   const [waitlistEnabled, setWaitlistEnabled] = useState<boolean>(true);
+
+  // ✅ recurring
+  const [isRecurring, setIsRecurring] = useState<boolean>(false);
+  const [recurrence, setRecurrence] = useState<RecurrenceFrequency>("WEEKLY");
 
   // ✅ Blob URLs (same concept as Edit)
   const [cover, setCover] = useState<string>("");
@@ -36,18 +47,43 @@ export default function CreateEventForm() {
   const payload = useMemo(() => {
     const cap = capacity.trim() ? Number(capacity) : null;
 
+    const normalizedState = stateCode.trim().toUpperCase();
+    const safeState = normalizedState ? normalizedState.slice(0, 2) : null;
+
     return {
       title: title.trim(),
       description: description.trim() || null,
       startAt: startAt ? toISOFromDatetimeLocal(startAt) : null,
       endAt: endAt ? toISOFromDatetimeLocal(endAt) : null,
       locationName: locationName.trim() || null,
+
       address: address.trim() || null,
+      city: city.trim() || null,
+      state: safeState,
+
       category: category || null,
+
       capacity: cap != null && Number.isFinite(cap) ? Math.max(1, Math.floor(cap)) : null,
       waitlistEnabled,
+
+      isRecurring,
+      recurrence: isRecurring ? recurrence : null,
     };
-  }, [title, description, startAt, endAt, locationName, address, category, capacity, waitlistEnabled]);
+  }, [
+    title,
+    description,
+    startAt,
+    endAt,
+    locationName,
+    address,
+    city,
+    stateCode,
+    category,
+    capacity,
+    waitlistEnabled,
+    isRecurring,
+    recurrence,
+  ]);
 
   function validate() {
     if (!payload.title) return "Title is required.";
@@ -60,8 +96,9 @@ export default function CreateEventForm() {
 
     if (payload.capacity != null && payload.capacity < 1) return "Capacity must be >= 1.";
 
-    // gallery limit (cover is separate)
     if ((images?.length ?? 0) > 5) return "Max 5 gallery images.";
+
+    if (payload.isRecurring && !payload.recurrence) return "Choose a recurrence frequency.";
 
     if (imagesUploading) return "Please wait for image uploads to finish.";
 
@@ -69,7 +106,6 @@ export default function CreateEventForm() {
   }
 
   async function persistImages(slug: string) {
-    // Save cover + gallery URLs into the event (same storage as Edit)
     const res = await fetch(`/api/events/${encodeURIComponent(slug)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -80,9 +116,7 @@ export default function CreateEventForm() {
     });
 
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data?.error ?? "Failed to save images.");
-    }
+    if (!res.ok) throw new Error(data?.error ?? "Failed to save images.");
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -93,7 +127,6 @@ export default function CreateEventForm() {
 
     setSaving(true);
     try {
-      // 1) create event (no filesystem uploads here)
       const res = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -106,9 +139,8 @@ export default function CreateEventForm() {
         return;
       }
 
-      const slug = data?.slug ?? data?.event?.slug ?? data?.data?.slug ?? null;
+      const slug = data?.slug ?? data?.event?.slug ?? null;
 
-      // 2) if we already uploaded blob URLs in the form, persist them into DB
       if (slug && (cover || (images?.length ?? 0) > 0)) {
         await persistImages(slug);
       }
@@ -116,8 +148,9 @@ export default function CreateEventForm() {
       toast.success("Event created!");
       router.push(slug ? `/public/events/${slug}` : "/public/events");
       router.refresh();
-    } catch (err: any) {
-      toast.error(err?.message ?? "Network error.", "Create failed");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Network error.";
+      toast.error(msg, "Create failed");
     } finally {
       setSaving(false);
     }
@@ -196,15 +229,72 @@ export default function CreateEventForm() {
           </label>
         </div>
 
-        <label className="text-sm text-zinc-300">
-          Address
-          <input
-            className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder="Street, city, state"
-          />
-        </label>
+        {/* ✅ Address / City / State */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <label className="text-sm text-zinc-300 md:col-span-1">
+            Address
+            <input
+              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="Street address"
+            />
+          </label>
+
+          <label className="text-sm text-zinc-300">
+            City
+            <input
+              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              placeholder="Miami"
+            />
+          </label>
+
+          <label className="text-sm text-zinc-300">
+            State
+            <input
+              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+              value={stateCode}
+              onChange={(e) => setStateCode(e.target.value.toUpperCase())}
+              placeholder="FL"
+              maxLength={2}
+            />
+          </label>
+        </div>
+
+        {/* ✅ Recurring */}
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <label className="flex items-center gap-3 text-sm text-zinc-200">
+            <input
+              type="checkbox"
+              checked={isRecurring}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setIsRecurring(on);
+                if (!on) setRecurrence("WEEKLY");
+              }}
+            />
+            Recurring event
+          </label>
+
+          {isRecurring ? (
+            <div className="mt-3">
+              <label className="text-sm text-zinc-300">
+                Repeats
+                <select
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none focus:border-white/20"
+                  value={recurrence}
+                  onChange={(e) => setRecurrence(e.target.value as RecurrenceFrequency)}
+                >
+                  <option value="WEEKLY">Every week</option>
+                  <option value="MONTHLY">Every month</option>
+                  <option value="YEARLY">Every year</option>
+                </select>
+              </label>
+            </div>
+          ) : null}
+        </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="text-sm text-zinc-300">
@@ -228,7 +318,6 @@ export default function CreateEventForm() {
           </label>
         </div>
 
-        {/* ✅ SAME as Edit: upload + set cover + delete, all URLs */}
         <EventImagesField
           cover={cover}
           images={images}

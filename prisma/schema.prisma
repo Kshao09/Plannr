@@ -24,6 +24,12 @@ enum AttendanceState {
   WAITLISTED
 }
 
+enum RecurrenceFrequency {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String?
@@ -53,11 +59,17 @@ model Event {
   startAt      DateTime
   endAt        DateTime
   locationName String?
+
   address      String?
+  city         String?
+  state        String?
 
   category String?
   image    String?
   images   String[] @default([]) // ✅ up to 5 stored here
+
+  isRecurring  Boolean  @default(false)
+  recurrence   RecurrenceFrequency?
 
   organizerId String
   organizer   User   @relation("OrganizerEvents", fields: [organizerId], references: [id])
@@ -74,7 +86,9 @@ model Event {
 
   @@index([startAt])
   @@index([locationName])
+  @@index([organizerId, startAt])
   @@index([category])
+  @@index([city, state])
 }
 
 model PasswordResetToken {
@@ -113,7 +127,6 @@ model RSVP {
   @@unique([userId, eventId])
   @@index([userId])
   @@index([eventId])
-  // helpful for capacity + waitlist queries
   @@index([eventId, status, attendanceState, createdAt])
 }
 

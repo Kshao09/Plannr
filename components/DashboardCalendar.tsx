@@ -3,8 +3,10 @@
 import Link from "next/link";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+type RSVPStatusLite = "GOING" | "MAYBE" | "DECLINED";
+
 type CalendarItem = {
-  id: string;
+  id: string; // unique per occurrence (server sends eventId:occurrenceStart)
   title: string;
   slug: string;
   startAt: string; // ISO
@@ -13,7 +15,7 @@ type CalendarItem = {
   category: string | null;
   image: string | null;
   kind: "organized" | "attending";
-  rsvpStatus?: string; // "GOING" | "MAYBE" | "DECLINED" (depending on your API typing)
+  rsvpStatus?: RSVPStatusLite;
 };
 
 function startOfDay(d: Date) {
@@ -47,17 +49,38 @@ function prettyMonth(d: Date) {
 
 function prettyTimeRange(startIso: string, endIso: string) {
   const s = new Date(startIso);
-  const e = new Date(endIso);
-  const date = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric" }).format(s);
+  const e0 = new Date(endIso);
+
+  // If an event ends exactly at midnight, show it as ending at 12:00 AM but do NOT spill into next day indexing.
+  const date = new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(s);
+
   const t1 = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(s);
-  const t2 = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(e);
+  const t2 = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(e0);
   return `${date} • ${t1} – ${t2}`;
+}
+
+// Treat end as exclusive for day-bucketing if it lands exactly on midnight
+function normalizeEndForDayBucketing(start: Date, end: Date) {
+  const e = new Date(end);
+  const s = new Date(start);
+  if (e.getTime() > s.getTime()) {
+    const isMidnight =
+      e.getHours() === 0 && e.getMinutes() === 0 && e.getSeconds() === 0 && e.getMilliseconds() === 0;
+    if (isMidnight) return new Date(e.getTime() - 1);
+  }
+  return e;
 }
 
 function clampDaysForMultiDaySpan(start: Date, end: Date, maxDays = 10) {
   const days: string[] = [];
   let cur = startOfDay(start);
-  const endDay = startOfDay(end);
+
+  const normEnd = normalizeEndForDayBucketing(start, end);
+  const endDay = startOfDay(normEnd);
 
   for (let i = 0; i < maxDays; i++) {
     days.push(ymd(cur));
@@ -94,7 +117,9 @@ export default function DashboardCalendar() {
     setLoading(true);
     setError(null);
 
-    const qs = `?start=${gridStart.toISOString()}&end=${gridEnd.toISOString()}`;
+    const qs =
+      `?start=${encodeURIComponent(gridStart.toISOString())}` +
+      `&end=${encodeURIComponent(gridEnd.toISOString())}`;
 
     fetch(`/api/dashboard/calendar${qs}`, { cache: "no-store" })
       .then(async (res) => {
@@ -106,7 +131,7 @@ export default function DashboardCalendar() {
       })
       .then((data) => {
         if (ignore) return;
-        setItems(data?.events ?? []);
+        setItems(Array.isArray(data?.events) ? data.events : []);
       })
       .catch((err: Error) => {
         if (ignore) return;
@@ -237,14 +262,23 @@ export default function DashboardCalendar() {
             const isActive = activeDay === key;
 
             return (
-              <button
+              <div
                 key={key}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => setActiveDay(key)}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    setActiveDay(key);
+                  }
+                }}
                 className={[
                   "min-h-[110px] rounded-2xl border p-3 text-left transition",
                   "focus:outline-none focus:ring-2 focus:ring-white/20",
-                  inMonth ? "border-white/10 bg-black/20 hover:bg-white/5" : "border-white/5 bg-black/10 opacity-80 hover:opacity-100",
+                  inMonth
+                    ? "border-white/10 bg-black/20 hover:bg-white/5"
+                    : "border-white/5 bg-black/10 opacity-80 hover:opacity-100",
                   isActive ? "ring-2 ring-white/10" : "",
                 ].join(" ")}
               >
@@ -262,15 +296,16 @@ export default function DashboardCalendar() {
                 {/* Show up to 2 event “chips” */}
                 <div className="mt-2 space-y-1">
                   {dayItems.slice(0, 2).map((e) => (
-                    <div
+                    <button
                       key={e.id}
+                      type="button"
                       onClick={(ev) => {
                         ev.preventDefault();
                         ev.stopPropagation();
                         setActiveEvent(e);
                       }}
                       className={[
-                        "cursor-pointer truncate rounded-lg border px-2 py-1 text-xs",
+                        "w-full cursor-pointer truncate rounded-lg border px-2 py-1 text-left text-xs",
                         e.kind === "organized"
                           ? "border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-100 hover:bg-fuchsia-500/15"
                           : "border-cyan-400/20 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/15",
@@ -278,13 +313,13 @@ export default function DashboardCalendar() {
                       title={e.title}
                     >
                       {e.title}
-                    </div>
+                    </button>
                   ))}
                   {dayItems.length > 2 ? (
                     <div className="text-xs text-zinc-500">+ {dayItems.length - 2} more</div>
                   ) : null}
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -331,9 +366,7 @@ export default function DashboardCalendar() {
                         <div className="mt-1 text-xs text-zinc-400">
                           {prettyTimeRange(e.startAt, e.endAt)}
                           {e.locationName ? ` • ${e.locationName}` : ""}
-                          {e.kind === "organized"
-                            ? " • Organized"
-                            : ` • ${e.rsvpStatus ?? "Attending"}`}
+                          {e.kind === "organized" ? " • Organized" : ` • ${e.rsvpStatus ?? "Attending"}`}
                         </div>
                       </div>
 
@@ -395,7 +428,7 @@ export default function DashboardCalendar() {
 
             <div className="mt-6 flex flex-col gap-2 sm:flex-row">
               <Link
-                  href={`/public/events/${activeEvent.slug}`}
+                href={`/public/events/${activeEvent.slug}`}
                 className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
               >
                 View event
@@ -403,7 +436,7 @@ export default function DashboardCalendar() {
 
               {activeEvent.kind === "organized" ? (
                 <Link
-                  href={`/organizer/events/${activeEvent.slug}/edit`}
+                  href={`/app/organizer/events/${activeEvent.slug}/edit`}
                   className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-gradient-to-r from-fuchsia-500/25 via-indigo-500/15 to-cyan-500/20 px-4 py-2 text-sm font-semibold text-white hover:border-white/25"
                 >
                   Edit event

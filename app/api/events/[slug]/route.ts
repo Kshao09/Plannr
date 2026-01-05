@@ -8,7 +8,9 @@ import { emailEventCancelled, emailEventUpdated } from "@/lib/rsvpEmails";
 
 export const runtime = "nodejs";
 
-async function resolveUser(session: any): Promise<{ userId: string | null; role: string | null }> {
+async function resolveUser(
+  session: any
+): Promise<{ userId: string | null; role: string | null }> {
   const su = session?.user ?? {};
   const sessionId = su?.id as string | undefined;
   const sessionEmail = su?.email as string | undefined;
@@ -38,28 +40,31 @@ function isValidDate(d: any) {
   return d instanceof Date && !Number.isNaN(d.getTime());
 }
 
-type EventSnapshot = {
-  startAt: Date | null;
-  endAt: Date | null;
-  locationName: string | null;
-  address: string | null;
-  capacity: number | null;
-  waitlistEnabled: boolean;
-};
-
-type Change = {
-  field: "time" | "location" | "capacity" | "waitlistEnabled";
-  from: string;
-  to: string;
-};
+function toTrimmedOrNull(v: any): string | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s ? s : null;
+}
 
 function fmtIsoOrEmpty(d: Date | null) {
   return d ? d.toISOString() : "";
 }
 
-function buildLocation(locName: string | null, addr: string | null) {
+// Build: "123 Main St, Miami, FL"
+function buildAddressLine(
+  street: string | null | undefined,
+  city: string | null | undefined,
+  state: string | null | undefined
+) {
+  const parts = [street, city, state]
+    .map((x) => (x ?? "").trim())
+    .filter(Boolean);
+  return parts.join(", ");
+}
+
+function buildLocation(locName: string | null, addressLine: string | null) {
   const a = (locName ?? "").trim();
-  const b = (addr ?? "").trim();
+  const b = (addressLine ?? "").trim();
   if (a && b) return `${a} — ${b}`;
   if (a) return a;
   if (b) return b;
@@ -70,14 +75,33 @@ function fmtCap(v: number | null) {
   return v === null ? "(no limit)" : String(v);
 }
 
+type EventSnapshot = {
+  startAt: Date | null;
+  endAt: Date | null;
+  locationName: string | null;
+  addressLine: string | null; // ✅ computed from street/city/state
+  capacity: number | null;
+  waitlistEnabled: boolean;
+};
+
+type Change = {
+  field: "time" | "location" | "capacity" | "waitlistEnabled";
+  from: string;
+  to: string;
+};
+
 function diffEvent(before: EventSnapshot, after: EventSnapshot): Change[] {
   const changes: Change[] = [];
 
   // location
-  const beforeLoc = buildLocation(before.locationName, before.address);
-  const afterLoc = buildLocation(after.locationName, after.address);
+  const beforeLoc = buildLocation(before.locationName, before.addressLine);
+  const afterLoc = buildLocation(after.locationName, after.addressLine);
   if (beforeLoc !== afterLoc) {
-    changes.push({ field: "location", from: beforeLoc || "(empty)", to: afterLoc || "(empty)" });
+    changes.push({
+      field: "location",
+      from: beforeLoc || "(empty)",
+      to: afterLoc || "(empty)",
+    });
   }
 
   // time
@@ -95,7 +119,11 @@ function diffEvent(before: EventSnapshot, after: EventSnapshot): Change[] {
 
   // capacity
   if ((before.capacity ?? null) !== (after.capacity ?? null)) {
-    changes.push({ field: "capacity", from: fmtCap(before.capacity), to: fmtCap(after.capacity) });
+    changes.push({
+      field: "capacity",
+      from: fmtCap(before.capacity),
+      to: fmtCap(after.capacity),
+    });
   }
 
   // waitlistEnabled
@@ -128,19 +156,27 @@ async function getRsvpRecipients(eventId: string) {
     if (!map.has(key)) map.set(key, { email: raw, name: r.user?.name ?? null });
   }
 
-  // ✅ FIX (your pasted copy had `return [.map.values()]`)
   return [...map.values()];
 }
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string }> }) {
+const RECURRENCE_VALUES = new Set(["WEEKLY", "MONTHLY", "YEARLY"] as const);
+type RecurrenceValue = (typeof RECURRENCE_VALUES extends Set<infer T> ? T : never) & string;
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ slug: string }> }
+) {
   const { slug } = await params;
 
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { userId, role } = await resolveUser(session);
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (role !== "ORGANIZER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!userId)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (role !== "ORGANIZER")
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
 
@@ -154,20 +190,32 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
       startAt: true,
       endAt: true,
       locationName: true,
+
+      // ✅ new address fields
       address: true,
+      city: true,
+      state: true,
+
       capacity: true,
       waitlistEnabled: true,
+
+      // ✅ media + recurrence fields (so PATCH can update them safely)
+      image: true,
+      images: true,
+      isRecurring: true,
+      recurrence: true,
     },
   });
 
   if (!event) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (event.organizerId !== userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (event.organizerId !== userId)
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const before: EventSnapshot = {
     startAt: event.startAt,
     endAt: event.endAt,
     locationName: event.locationName,
-    address: event.address,
+    addressLine: buildAddressLine(event.address, event.city, event.state),
     capacity: event.capacity,
     waitlistEnabled: event.waitlistEnabled,
   };
@@ -175,32 +223,91 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
   // Build update object WITHOUT wiping fields.
   const data: any = {};
 
-  if (has(body, "title")) data.title = String(body.title ?? "").trim();
-  if (has(body, "description")) data.description = body.description ? String(body.description) : null;
+  if (has(body, "title")) {
+    const t = String(body.title ?? "").trim();
+    if (!t) return NextResponse.json({ error: "Title is required" }, { status: 400 });
+    data.title = t;
+  }
+  if (has(body, "description"))
+    data.description = body.description ? String(body.description) : null;
 
   if (has(body, "startAt")) {
-    const d = body.startAt ? new Date(body.startAt) : null;
-    if (d && !isValidDate(d)) return NextResponse.json({ error: "Invalid startAt" }, { status: 400 });
+    if (!body.startAt)
+      return NextResponse.json({ error: "startAt is required" }, { status: 400 });
+    const d = new Date(body.startAt);
+    if (!isValidDate(d))
+      return NextResponse.json({ error: "Invalid startAt" }, { status: 400 });
     data.startAt = d;
   }
 
   if (has(body, "endAt")) {
-    const d = body.endAt ? new Date(body.endAt) : null;
-    if (d && !isValidDate(d)) return NextResponse.json({ error: "Invalid endAt" }, { status: 400 });
+    if (!body.endAt)
+      return NextResponse.json({ error: "endAt is required" }, { status: 400 });
+    const d = new Date(body.endAt);
+    if (!isValidDate(d))
+      return NextResponse.json({ error: "Invalid endAt" }, { status: 400 });
     data.endAt = d;
   }
 
-  if (has(body, "locationName")) data.locationName = body.locationName ? String(body.locationName) : null;
-  if (has(body, "address")) data.address = body.address ? String(body.address) : null;
-  if (has(body, "category")) data.category = body.category ? String(body.category) : null;
-  if (has(body, "image")) data.image = body.image ? String(body.image) : null;
+  if (has(body, "locationName")) data.locationName = toTrimmedOrNull(body.locationName);
+
+  // ✅ street/city/state fields
+  if (has(body, "address")) data.address = toTrimmedOrNull(body.address);
+  if (has(body, "city")) data.city = toTrimmedOrNull(body.city);
+  if (has(body, "state")) data.state = toTrimmedOrNull(body.state);
+
+  if (has(body, "category")) data.category = toTrimmedOrNull(body.category);
+
+  // ✅ cover + gallery
+  if (has(body, "image")) data.image = toTrimmedOrNull(body.image);
+
+  if (has(body, "images")) {
+    if (body.images === null) {
+      data.images = [];
+    } else if (!Array.isArray(body.images)) {
+      return NextResponse.json({ error: "images must be an array" }, { status: 400 });
+    } else {
+      const cleaned = body.images
+        .map((x: any) => String(x ?? "").trim())
+        .filter(Boolean);
+
+      if (cleaned.length > 5)
+        return NextResponse.json({ error: "Max 5 gallery images" }, { status: 400 });
+
+      data.images = cleaned;
+    }
+  }
+
+  // ✅ recurrence
+  if (has(body, "isRecurring")) data.isRecurring = !!body.isRecurring;
+
+  if (has(body, "recurrence")) {
+    if (body.recurrence === null || body.recurrence === "") {
+      data.recurrence = null;
+    } else {
+      const val = String(body.recurrence).toUpperCase();
+      if (!RECURRENCE_VALUES.has(val as RecurrenceValue)) {
+        return NextResponse.json(
+          { error: "Invalid recurrence (WEEKLY, MONTHLY, YEARLY)" },
+          { status: 400 }
+        );
+      }
+      data.recurrence = val;
+    }
+  }
+
+  // If recurrence turned off, always clear recurrence
+  if (has(body, "isRecurring") && data.isRecurring === false) {
+    data.recurrence = null;
+  }
 
   if (has(body, "capacity")) {
     if (body.capacity === null || body.capacity === "") {
       data.capacity = null;
     } else {
       const n = Number(body.capacity);
-      if (!Number.isFinite(n)) return NextResponse.json({ error: "Invalid capacity" }, { status: 400 });
+      if (!Number.isFinite(n))
+        return NextResponse.json({ error: "Invalid capacity" }, { status: 400 });
       data.capacity = Math.max(1, Math.floor(n));
     }
   }
@@ -217,9 +324,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
       startAt: true,
       endAt: true,
       locationName: true,
+
       address: true,
+      city: true,
+      state: true,
+
       capacity: true,
       waitlistEnabled: true,
+
+      image: true,
+      images: true,
+
+      isRecurring: true,
+      recurrence: true,
     },
   });
 
@@ -227,7 +344,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
     startAt: updated.startAt,
     endAt: updated.endAt,
     locationName: updated.locationName,
-    address: updated.address,
+    addressLine: buildAddressLine(updated.address, updated.city, updated.state),
     capacity: updated.capacity,
     waitlistEnabled: updated.waitlistEnabled,
   };
@@ -238,6 +355,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
     const baseUrl = getBaseUrlFromRequest(req);
     const eventUrl = `${baseUrl}/public/events/${updated.slug}`;
     const recipients = await getRsvpRecipients(event.id);
+
+    const addressLine = after.addressLine || null;
 
     try {
       await Promise.allSettled(
@@ -251,7 +370,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
             startAt: updated.startAt,
             endAt: updated.endAt,
             locationName: updated.locationName,
-            address: updated.address,
+            address: addressLine,
           })
         )
       );
@@ -272,15 +391,21 @@ export async function PUT(req: Request, ctx: { params: Promise<{ slug: string }>
   return PATCH(req, ctx);
 }
 
-export async function DELETE(req: Request, { params }: { params: Promise<{ slug: string }> }) {
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ slug: string }> }
+) {
   const { slug } = await params;
 
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { userId, role } = await resolveUser(session);
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (role !== "ORGANIZER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!userId)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (role !== "ORGANIZER")
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const event = await prisma.event.findFirst({
     where: { slug },
@@ -292,12 +417,16 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ slug:
       startAt: true,
       endAt: true,
       locationName: true,
+
       address: true,
+      city: true,
+      state: true,
     },
   });
 
   if (!event) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (event.organizerId !== userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (event.organizerId !== userId)
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const baseUrl = getBaseUrlFromRequest(req);
   const listUrl = `${baseUrl}/public/events`;
@@ -305,6 +434,8 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ slug:
   // Only notify GOING + MAYBE
   const recipients = await getRsvpRecipients(event.id);
   if (recipients.length > 0) {
+    const addressLine = buildAddressLine(event.address, event.city, event.state) || null;
+
     try {
       await Promise.allSettled(
         recipients.map((r) =>
@@ -316,7 +447,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ slug:
             startAt: event.startAt,
             endAt: event.endAt,
             locationName: event.locationName,
-            address: event.address,
+            address: addressLine,
           })
         )
       );
