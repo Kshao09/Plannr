@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { auth } from "@/auth";
 import OrganizerCreateLink from "@/components/OrganizerCreateLink";
-import { signOutAction } from "./_actions/signOutAction";
+import SignOutButton from "@/components/SignOutButton";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -35,11 +35,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             {isOrganizer ? <OrganizerCreateLink /> : null}
 
             {session?.user ? (
-              <form action={signOutAction}>
-                <button className="rounded-xl bg-white px-3 py-2 text-sm font-medium text-black hover:opacity-90">
-                  Sign out
-                </button>
-              </form>
+              <SignOutButton className="rounded-xl bg-white px-3 py-2 text-sm font-medium text-black hover:opacity-90">
+                Sign out
+              </SignOutButton>
             ) : (
               <Link href="/login" className="text-sm text-zinc-200 hover:text-white">
                 Sign in

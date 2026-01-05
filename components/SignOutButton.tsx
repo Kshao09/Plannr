@@ -1,34 +1,44 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useTransition } from "react";
 import { signOut } from "next-auth/react";
-import { broadcastAuth } from "@/lib/authBroadcast";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
-export default function SignOutButton({ className }: { className?: string }) {
+export default function SignOutButton({
+  className,
+  redirectTo = "/",
+  children,
+}: {
+  className?: string;
+  redirectTo?: string;
+  children?: React.ReactNode;
+}) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
   return (
     <button
       type="button"
       className={className}
       disabled={pending}
-      onClick={() =>
-        startTransition(async () => {
-          // Important: sign out first so cookie/session is actually cleared
+      onClick={async () => {
+        if (pending) return;
+        setPending(true);
+        try {
+          // extra nudge for tabs (optional, but helps)
+          localStorage.setItem("plannr:auth", String(Date.now()));
+
+          // NextAuth client signOut broadcasts to other tabs
           await signOut({ redirect: false });
 
-          // Then tell other tabs to refresh
-          broadcastAuth("signout");
-
-          // Update this tab too
+          router.replace(redirectTo);
           router.refresh();
-          router.push("/");
-        })
-      }
+        } finally {
+          setPending(false);
+        }
+      }}
     >
-      {pending ? "Signing out..." : "Sign out"}
+      {children ?? "Sign out"}
     </button>
   );
 }

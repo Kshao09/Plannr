@@ -15,7 +15,7 @@ export function broadcastAuth(type: AuthMsg["type"]) {
     ch.close();
   }
 
-  // localStorage fallback: DO NOT remove immediately (more reliable)
+  // localStorage fallback: don't remove immediately (more reliable)
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(msg));
   } catch {
@@ -24,26 +24,21 @@ export function broadcastAuth(type: AuthMsg["type"]) {
 }
 
 export function subscribeAuth(handler: (msg: AuthMsg) => void) {
-  // BroadcastChannel subscription
   let ch: BroadcastChannel | null = null;
 
   if (typeof BroadcastChannel !== "undefined") {
     ch = new BroadcastChannel(CHANNEL_KEY);
-    const onMsg = (ev: MessageEvent) => {
+    ch.addEventListener("message", (ev) => {
       const msg = ev.data as AuthMsg;
-      if (!msg || (msg.type !== "signout" && msg.type !== "signin")) return;
+      if (!msg?.type) return;
       handler(msg);
-    };
-    ch.addEventListener("message", onMsg);
+    });
   }
 
-  // localStorage subscription
   const onStorage = (ev: StorageEvent) => {
     if (ev.key !== STORAGE_KEY || !ev.newValue) return;
     try {
-      const msg = JSON.parse(ev.newValue) as AuthMsg;
-      if (!msg || (msg.type !== "signout" && msg.type !== "signin")) return;
-      handler(msg);
+      handler(JSON.parse(ev.newValue) as AuthMsg);
     } catch {
       // ignore
     }

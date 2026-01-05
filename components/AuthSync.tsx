@@ -1,33 +1,40 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { getSession } from "next-auth/react";
-import { subscribeAuth } from "@/lib/authBroadcast";
+import { useSession } from "next-auth/react";
+import { useEffect, useRef } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 export default function AuthSync() {
+  const { status } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
+  const prev = useRef(status);
 
   useEffect(() => {
-    return subscribeAuth((msg) => {
-      if (msg.type !== "signout") return;
+    const was = prev.current;
+    prev.current = status;
 
-      // 1) soft refresh first
-      router.refresh();
-
-      // 2) if this tab still thinks it's logged-in, force a hard reload
-      setTimeout(async () => {
-        try {
-          const s = await getSession();
-          if (s?.user) {
-            window.location.reload();
-          }
-        } catch {
-          // If session check fails, reload anyway to be safe
-          window.location.reload();
+    // Session changed (this tab OR another tab)
+    if (was !== status) {
+      // If user got signed out, refresh server components so /app layout updates
+      if (status === "unauthenticated") {
+        // If they’re on a protected page, send them to login (optional but nice)
+        if (pathname?.startsWith("/app")) {
+          router.replace(`/login?next=${encodeURIComponent(pathname)}`);
         }
-      }, 300);
-    });
+      }
+
+      router.refresh();
+    }
+  }, [status, router, pathname]);
+
+  // Extra “poke” mechanism in case you want it (SignOutButton sets this):
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "plannr:auth") router.refresh();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, [router]);
 
   return null;
