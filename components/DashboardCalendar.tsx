@@ -3,10 +3,8 @@
 import Link from "next/link";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-type RSVPStatusLite = "GOING" | "MAYBE" | "DECLINED";
-
 type CalendarItem = {
-  id: string; // unique per occurrence (server sends eventId:occurrenceStart)
+  id: string;
   title: string;
   slug: string;
   startAt: string; // ISO
@@ -15,7 +13,7 @@ type CalendarItem = {
   category: string | null;
   image: string | null;
   kind: "organized" | "attending";
-  rsvpStatus?: RSVPStatusLite;
+  rsvpStatus?: string;
 };
 
 function startOfDay(d: Date) {
@@ -49,38 +47,25 @@ function prettyMonth(d: Date) {
 
 function prettyTimeRange(startIso: string, endIso: string) {
   const s = new Date(startIso);
-  const e0 = new Date(endIso);
-
-  // If an event ends exactly at midnight, show it as ending at 12:00 AM but do NOT spill into next day indexing.
-  const date = new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  }).format(s);
-
+  const e = new Date(endIso);
+  const date = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric" }).format(s);
   const t1 = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(s);
-  const t2 = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(e0);
+  const t2 = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(e);
   return `${date} • ${t1} – ${t2}`;
 }
 
-// Treat end as exclusive for day-bucketing if it lands exactly on midnight
-function normalizeEndForDayBucketing(start: Date, end: Date) {
-  const e = new Date(end);
-  const s = new Date(start);
-  if (e.getTime() > s.getTime()) {
-    const isMidnight =
-      e.getHours() === 0 && e.getMinutes() === 0 && e.getSeconds() === 0 && e.getMilliseconds() === 0;
-    if (isMidnight) return new Date(e.getTime() - 1);
-  }
-  return e;
+// Treat end as EXCLUSIVE for day-bucketing by subtracting 1ms.
+// This prevents "ends at 00:00" from counting as the next day.
+function endExclusiveForBucketing(end: Date) {
+  const x = new Date(end);
+  x.setMilliseconds(x.getMilliseconds() - 1);
+  return x;
 }
 
-function clampDaysForMultiDaySpan(start: Date, end: Date, maxDays = 10) {
+function clampDaysForMultiDaySpan(startInclusive: Date, endInclusive: Date, maxDays = 42) {
   const days: string[] = [];
-  let cur = startOfDay(start);
-
-  const normEnd = normalizeEndForDayBucketing(start, end);
-  const endDay = startOfDay(normEnd);
+  let cur = startOfDay(startInclusive);
+  const endDay = startOfDay(endInclusive);
 
   for (let i = 0; i < maxDays; i++) {
     days.push(ymd(cur));
@@ -96,12 +81,10 @@ export default function DashboardCalendar() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // day drawer + event modal
   const [activeDay, setActiveDay] = useState<string | null>(null);
   const [activeEvent, setActiveEvent] = useState<CalendarItem | null>(null);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
 
-  // Compute the 6-week grid range (42 cells)
   const { gridStart, gridEnd, cells } = useMemo(() => {
     const firstOfMonth = new Date(month.getFullYear(), month.getMonth(), 1);
     const gs = startOfWeekSunday(firstOfMonth);
@@ -111,15 +94,14 @@ export default function DashboardCalendar() {
     return { gridStart: gs, gridEnd: ge, cells: ce };
   }, [month]);
 
-  // Fetch events for the visible grid range
+  const cellKeySet = useMemo(() => new Set(cells.map(ymd)), [cells]);
+
   useEffect(() => {
     let ignore = false;
     setLoading(true);
     setError(null);
 
-    const qs =
-      `?start=${encodeURIComponent(gridStart.toISOString())}` +
-      `&end=${encodeURIComponent(gridEnd.toISOString())}`;
+    const qs = `?start=${gridStart.toISOString()}&end=${gridEnd.toISOString()}`;
 
     fetch(`/api/dashboard/calendar${qs}`, { cache: "no-store" })
       .then(async (res) => {
@@ -147,28 +129,34 @@ export default function DashboardCalendar() {
     };
   }, [gridStart, gridEnd]);
 
-  // Index items by day (supports multi-day spans)
   const itemsByDay = useMemo(() => {
     const map = new Map<string, CalendarItem[]>();
+
     for (const it of items) {
       const s = new Date(it.startAt);
-      const e = new Date(it.endAt);
-      const keys = clampDaysForMultiDaySpan(s, e, 10);
+      const e0 = new Date(it.endAt);
+      if (Number.isNaN(s.getTime()) || Number.isNaN(e0.getTime())) continue;
+      if (e0.getTime() <= s.getTime()) continue;
+
+      const e = endExclusiveForBucketing(e0);
+      const keys = clampDaysForMultiDaySpan(s, e, 42);
+
       for (const k of keys) {
+        if (!cellKeySet.has(k)) continue; // only bucket visible days
         const arr = map.get(k) ?? [];
         arr.push(it);
         map.set(k, arr);
       }
     }
-    // sort within each day
+
     for (const [k, arr] of map.entries()) {
       arr.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
       map.set(k, arr);
     }
-    return map;
-  }, [items]);
 
-  // Open/close dialog when activeEvent changes
+    return map;
+  }, [items, cellKeySet]);
+
   useEffect(() => {
     const d = dialogRef.current;
     if (!d) return;
@@ -212,7 +200,6 @@ export default function DashboardCalendar() {
   return (
     <>
       <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
-        {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-white">Schedule</h2>
@@ -244,7 +231,6 @@ export default function DashboardCalendar() {
           </div>
         </div>
 
-        {/* Weekday labels */}
         <div className="mt-5 grid grid-cols-7 gap-2 text-xs text-zinc-400">
           {weekdayLabels.map((w) => (
             <div key={w} className="px-2">
@@ -253,7 +239,6 @@ export default function DashboardCalendar() {
           ))}
         </div>
 
-        {/* Grid */}
         <div className="mt-2 grid grid-cols-7 gap-2">
           {cells.map((d) => {
             const key = ymd(d);
@@ -262,17 +247,10 @@ export default function DashboardCalendar() {
             const isActive = activeDay === key;
 
             return (
-              <div
+              <button
                 key={key}
-                role="button"
-                tabIndex={0}
+                type="button"
                 onClick={() => setActiveDay(key)}
-                onKeyDown={(ev) => {
-                  if (ev.key === "Enter" || ev.key === " ") {
-                    ev.preventDefault();
-                    setActiveDay(key);
-                  }
-                }}
                 className={[
                   "min-h-[110px] rounded-2xl border p-3 text-left transition",
                   "focus:outline-none focus:ring-2 focus:ring-white/20",
@@ -293,19 +271,17 @@ export default function DashboardCalendar() {
                   ) : null}
                 </div>
 
-                {/* Show up to 2 event “chips” */}
                 <div className="mt-2 space-y-1">
                   {dayItems.slice(0, 2).map((e) => (
-                    <button
+                    <div
                       key={e.id}
-                      type="button"
                       onClick={(ev) => {
                         ev.preventDefault();
                         ev.stopPropagation();
                         setActiveEvent(e);
                       }}
                       className={[
-                        "w-full cursor-pointer truncate rounded-lg border px-2 py-1 text-left text-xs",
+                        "cursor-pointer truncate rounded-lg border px-2 py-1 text-xs",
                         e.kind === "organized"
                           ? "border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-100 hover:bg-fuchsia-500/15"
                           : "border-cyan-400/20 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/15",
@@ -313,18 +289,17 @@ export default function DashboardCalendar() {
                       title={e.title}
                     >
                       {e.title}
-                    </button>
+                    </div>
                   ))}
                   {dayItems.length > 2 ? (
                     <div className="text-xs text-zinc-500">+ {dayItems.length - 2} more</div>
                   ) : null}
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
 
-        {/* Day drawer */}
         {activeDay ? (
           <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-5">
             <div className="flex items-center justify-between">
@@ -389,7 +364,6 @@ export default function DashboardCalendar() {
         ) : null}
       </section>
 
-      {/* Event modal */}
       <dialog
         ref={dialogRef}
         onClose={() => setActiveEvent(null)}

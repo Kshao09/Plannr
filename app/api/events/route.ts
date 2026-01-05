@@ -2,40 +2,17 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { RecurrenceFrequency } from "@prisma/client";
 
 export const runtime = "nodejs";
+
+type RecurrenceFrequency = "WEEKLY" | "MONTHLY" | "YEARLY";
 
 function slugify(s: string) {
   return s
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-}
-
-function toTrimmedOrNull(v: unknown): string | null {
-  if (v === null || v === undefined) return null;
-  const s = String(v).trim();
-  return s ? s : null;
-}
-
-function parseCapacity(v: unknown): number | null {
-  if (v === null || v === undefined || v === "") return null;
-  const n = Number(v);
-  if (!Number.isFinite(n)) return null; // reject NaN / Infinity
-  return Math.max(1, Math.floor(n));
-}
-
-function parseImages(v: unknown): string[] {
-  if (v === null || v === undefined) return [];
-  if (!Array.isArray(v)) return [];
-  const cleaned = v
-    .map((x) => String(x ?? "").trim())
-    .filter(Boolean);
-
-  // DB limit is 5 (cover is separate)
-  return cleaned.slice(0, 5);
+    .replace(/(^-|-$)+/g, "");
 }
 
 async function resolveUserId(session: any): Promise<string | null> {
@@ -67,11 +44,54 @@ async function makeUniqueSlug(title: string) {
   return slug;
 }
 
-const RECURRENCE_SET = new Set<RecurrenceFrequency>([
-  RecurrenceFrequency.WEEKLY,
-  RecurrenceFrequency.MONTHLY,
-  RecurrenceFrequency.YEARLY,
-]);
+function toTrimmedOrNull(v: unknown) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s ? s : null;
+}
+
+function parseDateOrNull(v: unknown) {
+  const s = toTrimmedOrNull(v);
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function normalizeState(v: unknown) {
+  const s = toTrimmedOrNull(v);
+  if (!s) return null;
+  return s.toUpperCase().slice(0, 2);
+}
+
+function normalizeRecurrence(v: unknown): RecurrenceFrequency | null {
+  const s = toTrimmedOrNull(v);
+  if (!s) return null;
+  const up = s.toUpperCase();
+  if (up === "WEEKLY" || up === "MONTHLY" || up === "YEARLY") return up;
+  return null;
+}
+
+function addWeeks(d: Date, n: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n * 7);
+  return x;
+}
+function addMonths(d: Date, n: number) {
+  const x = new Date(d);
+  x.setMonth(x.getMonth() + n);
+  return x;
+}
+function addYears(d: Date, n: number) {
+  const x = new Date(d);
+  x.setFullYear(x.getFullYear() + n);
+  return x;
+}
+
+function nextOccurrenceStart(startAt: Date, freq: RecurrenceFrequency) {
+  if (freq === "WEEKLY") return addWeeks(startAt, 1);
+  if (freq === "MONTHLY") return addMonths(startAt, 1);
+  return addYears(startAt, 1);
+}
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -89,65 +109,65 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
 
   const title = String(body?.title ?? "").trim();
-  const description = toTrimmedOrNull(body?.description);
-
-  const startAtRaw = String(body?.startAt ?? "");
-  const endAtRaw = String(body?.endAt ?? "");
-  const startAt = startAtRaw ? new Date(startAtRaw) : null;
-  const endAt = endAtRaw ? new Date(endAtRaw) : null;
-
   if (!title) return NextResponse.json({ error: "Title is required" }, { status: 400 });
 
-  if (!startAt || !endAt || Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
+  const startAt = parseDateOrNull(body?.startAt);
+  const endAt = parseDateOrNull(body?.endAt);
+
+  if (!startAt || !endAt) {
     return NextResponse.json({ error: "Start and end are required" }, { status: 400 });
   }
   if (endAt.getTime() <= startAt.getTime()) {
     return NextResponse.json({ error: "End must be after start" }, { status: 400 });
   }
 
+  const description = toTrimmedOrNull(body?.description);
+
   const locationName = toTrimmedOrNull(body?.locationName);
 
-  // ✅ New separated address fields
   const address = toTrimmedOrNull(body?.address);
   const city = toTrimmedOrNull(body?.city);
-
-  // If you want strict 2-letter US state codes:
-  const stateRaw = toTrimmedOrNull(body?.state);
-  const state = stateRaw ? stateRaw.toUpperCase().slice(0, 2) : null;
+  const state = normalizeState(body?.state);
 
   const category = toTrimmedOrNull(body?.category);
 
-  const capacity = parseCapacity(body?.capacity);
-  if (body?.capacity !== null && body?.capacity !== undefined && body?.capacity !== "" && capacity === null) {
+  const capRaw = body?.capacity;
+  const capacity =
+    capRaw === null || capRaw === undefined || capRaw === ""
+      ? null
+      : Math.max(1, Math.floor(Number(capRaw)));
+
+  if (capacity !== null && !Number.isFinite(capacity)) {
     return NextResponse.json({ error: "Invalid capacity" }, { status: 400 });
   }
 
   const waitlistEnabled = body?.waitlistEnabled === undefined ? true : Boolean(body.waitlistEnabled);
 
-  // ✅ Recurrence
   const isRecurring = Boolean(body?.isRecurring);
+  const recurrence = normalizeRecurrence(body?.recurrence);
 
-  let recurrence: RecurrenceFrequency | null = null;
-  if (isRecurring) {
-    const raw = String(body?.recurrence ?? "").toUpperCase().trim();
-    if (!raw) {
-      return NextResponse.json(
-        { error: "Recurrence is required when recurring is enabled" },
-        { status: 400 }
-      );
-    }
-    if (!RECURRENCE_SET.has(raw as RecurrenceFrequency)) {
-      return NextResponse.json(
-        { error: "Invalid recurrence (WEEKLY, MONTHLY, YEARLY)" },
-        { status: 400 }
-      );
-    }
-    recurrence = raw as RecurrenceFrequency;
+  if (isRecurring && !recurrence) {
+    return NextResponse.json(
+      { error: "Recurrence is required when recurring is enabled" },
+      { status: 400 }
+    );
   }
 
-  // ✅ Optional: allow create to accept images directly (even if your form PATCHes later)
-  const image = toTrimmedOrNull(body?.image);
-  const images = parseImages(body?.images);
+  // ✅ Critical validation to prevent calendar explosion:
+  // End time must be within ONE recurrence interval.
+  if (isRecurring && recurrence) {
+    const nextStart = nextOccurrenceStart(startAt, recurrence);
+    if (endAt.getTime() > nextStart.getTime()) {
+      return NextResponse.json(
+        {
+          error:
+            `For recurring events, End must be before the next occurrence starts. ` +
+            `Tip: End is the end time of EACH occurrence (not the series end date).`,
+        },
+        { status: 400 }
+      );
+    }
+  }
 
   const slug = await makeUniqueSlug(title);
 
@@ -159,21 +179,14 @@ export async function POST(req: Request) {
       startAt,
       endAt,
       locationName,
-
       address,
       city,
       state,
-
       category,
       capacity,
       waitlistEnabled,
-
       isRecurring,
-      recurrence,
-
-      image,
-      images,
-
+      recurrence: isRecurring ? (recurrence as any) : null,
       organizerId,
     },
     select: { slug: true },

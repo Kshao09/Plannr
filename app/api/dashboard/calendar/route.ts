@@ -54,22 +54,21 @@ function addWeeks(d: Date, n: number) {
   x.setDate(x.getDate() + n * 7);
   return x;
 }
-
 function addMonths(d: Date, n: number) {
   const x = new Date(d);
   x.setMonth(x.getMonth() + n);
   return x;
 }
-
 function addYears(d: Date, n: number) {
   const x = new Date(d);
   x.setFullYear(x.getFullYear() + n);
   return x;
 }
 
-function normalizeRecurrence(v: unknown): RecurrenceFrequency | null {
-  if (v === "WEEKLY" || v === "MONTHLY" || v === "YEARLY") return v;
-  return null;
+function stepByFrequency(d: Date, freq: RecurrenceFrequency) {
+  if (freq === "WEEKLY") return addWeeks(d, 1);
+  if (freq === "MONTHLY") return addMonths(d, 1);
+  return addYears(d, 1);
 }
 
 function jumpNearRangeStart(baseStart: Date, freq: RecurrenceFrequency, rangeStart: Date) {
@@ -89,7 +88,6 @@ function jumpNearRangeStart(baseStart: Date, freq: RecurrenceFrequency, rangeSta
     return addMonths(baseStart, diffMonths);
   }
 
-  // YEARLY
   const diffYears = Math.max(0, rangeStart.getFullYear() - baseStart.getFullYear() - 1);
   return addYears(baseStart, diffYears);
 }
@@ -129,7 +127,7 @@ function expandOccurrencesIntoRange(args: {
 
   const out: CalendarItem[] = [];
 
-  // non-recurring: single instance if overlaps
+  // Non-recurring
   if (!isRecurring || !recurrence) {
     if (overlaps(startAt, endAt, rangeStart, rangeEnd)) {
       const key = `${eventId}:${startAt.toISOString()}`;
@@ -152,7 +150,17 @@ function expandOccurrencesIntoRange(args: {
   const durationMs = endAt.getTime() - startAt.getTime();
   if (durationMs <= 0) return out;
 
-  const MAX_INSTANCES = 200; // plenty for <=93 days
+  // Range-based cap (prevents runaway)
+  const rangeMs = rangeEnd.getTime() - rangeStart.getTime();
+  const roughIntervalMs =
+    recurrence === "WEEKLY"
+      ? 7 * 24 * 60 * 60 * 1000
+      : recurrence === "MONTHLY"
+      ? 31 * 24 * 60 * 60 * 1000
+      : 366 * 24 * 60 * 60 * 1000;
+
+  const MAX_INSTANCES = Math.min(200, Math.ceil(rangeMs / roughIntervalMs) + 6);
+
   let curStart = jumpNearRangeStart(startAt, recurrence, rangeStart);
 
   for (let i = 0; i < MAX_INSTANCES; i++) {
@@ -176,9 +184,7 @@ function expandOccurrencesIntoRange(args: {
       });
     }
 
-    if (recurrence === "WEEKLY") curStart = addWeeks(curStart, 1);
-    else if (recurrence === "MONTHLY") curStart = addMonths(curStart, 1);
-    else curStart = addYears(curStart, 1);
+    curStart = stepByFrequency(curStart, recurrence);
   }
 
   return out;
@@ -187,22 +193,16 @@ function expandOccurrencesIntoRange(args: {
 // GET /api/dashboard/calendar?start=...&end=...
 export async function GET(req: Request) {
   const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const userId = await resolveUserId(session);
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const start = parseISODate(searchParams.get("start"));
   const end = parseISODate(searchParams.get("end"));
 
-  if (!start || !end) {
-    return NextResponse.json({ error: "Missing start/end" }, { status: 400 });
-  }
+  if (!start || !end) return NextResponse.json({ error: "Missing start/end" }, { status: 400 });
 
   // Safety: limit range (max 93 days)
   const maxRangeMs = 93 * 24 * 60 * 60 * 1000;
@@ -214,9 +214,7 @@ export async function GET(req: Request) {
     where: {
       organizerId: userId,
       OR: [
-        // normal overlap for non-recurring
         { isRecurring: false, startAt: { lt: end }, endAt: { gt: start } },
-        // recurring events can start earlier and still have occurrences in range
         { isRecurring: true, startAt: { lt: end } },
       ],
     },
@@ -267,7 +265,6 @@ export async function GET(req: Request) {
     orderBy: { event: { startAt: "asc" } },
   });
 
-  // Dedup by occurrence key
   const map = new Map<string, CalendarItem>();
 
   for (const e of organized) {
@@ -280,19 +277,18 @@ export async function GET(req: Request) {
       locationName: e.locationName ?? null,
       category: e.category ?? null,
       image: e.image ?? null,
-      isRecurring: !!e.isRecurring,
-      recurrence: normalizeRecurrence(e.recurrence),
+      isRecurring: e.isRecurring,
+      recurrence: (e.recurrence as any) as RecurrenceFrequency | null,
       rangeStart: start,
       rangeEnd: end,
       kind: "organized",
     });
-
     for (const it of items) map.set(it.id, it);
   }
 
   for (const r of rsvps) {
     const e = r.event;
-    if (e.organizerId === userId) continue; // already in organized
+    if (e.organizerId === userId) continue;
 
     const items = expandOccurrencesIntoRange({
       eventId: e.id,
@@ -303,17 +299,15 @@ export async function GET(req: Request) {
       locationName: e.locationName ?? null,
       category: e.category ?? null,
       image: e.image ?? null,
-      isRecurring: !!e.isRecurring,
-      recurrence: normalizeRecurrence(e.recurrence),
+      isRecurring: e.isRecurring,
+      recurrence: (e.recurrence as any) as RecurrenceFrequency | null,
       rangeStart: start,
       rangeEnd: end,
       kind: "attending",
       rsvpStatus: r.status as RSVPStatusLite,
     });
 
-    for (const it of items) {
-      if (!map.has(it.id)) map.set(it.id, it);
-    }
+    for (const it of items) if (!map.has(it.id)) map.set(it.id, it);
   }
 
   return NextResponse.json({ events: Array.from(map.values()) });
