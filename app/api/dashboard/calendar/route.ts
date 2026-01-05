@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { cacheGet, cacheSet } from "@/lib/cache";
 
 export const runtime = "nodejs";
 
@@ -77,7 +78,7 @@ function jumpNearRangeStart(baseStart: Date, freq: RecurrenceFrequency, rangeSta
   if (freq === "WEEKLY") {
     const weekMs = 7 * 24 * 60 * 60 * 1000;
     const diffWeeks = Math.floor((rangeStart.getTime() - baseStart.getTime()) / weekMs);
-    const n = Math.max(0, diffWeeks - 1); // step back 1 to catch overlaps
+    const n = Math.max(0, diffWeeks - 1);
     return addWeeks(baseStart, n);
   }
 
@@ -127,7 +128,6 @@ function expandOccurrencesIntoRange(args: {
 
   const out: CalendarItem[] = [];
 
-  // Non-recurring
   if (!isRecurring || !recurrence) {
     if (overlaps(startAt, endAt, rangeStart, rangeEnd)) {
       const key = `${eventId}:${startAt.toISOString()}`;
@@ -150,7 +150,6 @@ function expandOccurrencesIntoRange(args: {
   const durationMs = endAt.getTime() - startAt.getTime();
   if (durationMs <= 0) return out;
 
-  // Range-based cap (prevents runaway)
   const rangeMs = rangeEnd.getTime() - rangeStart.getTime();
   const roughIntervalMs =
     recurrence === "WEEKLY"
@@ -165,7 +164,6 @@ function expandOccurrencesIntoRange(args: {
 
   for (let i = 0; i < MAX_INSTANCES; i++) {
     const curEnd = new Date(curStart.getTime() + durationMs);
-
     if (curStart.getTime() >= rangeEnd.getTime()) break;
 
     if (overlaps(curStart, curEnd, rangeStart, rangeEnd)) {
@@ -190,7 +188,6 @@ function expandOccurrencesIntoRange(args: {
   return out;
 }
 
-// GET /api/dashboard/calendar?start=...&end=...
 export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -201,13 +198,18 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const start = parseISODate(searchParams.get("start"));
   const end = parseISODate(searchParams.get("end"));
-
   if (!start || !end) return NextResponse.json({ error: "Missing start/end" }, { status: 400 });
 
-  // Safety: limit range (max 93 days)
   const maxRangeMs = 93 * 24 * 60 * 60 * 1000;
   if (end.getTime() - start.getTime() > maxRangeMs) {
     return NextResponse.json({ error: "Range too large" }, { status: 400 });
+  }
+
+  // Small TTL cache (safe; prevents thundering herd)
+  const cacheKey = `cal:${userId}:${start.toISOString()}:${end.toISOString()}`;
+  const cached = await cacheGet<{ events: CalendarItem[] }>(cacheKey);
+  if (cached) {
+    return NextResponse.json(cached);
   }
 
   const organized = await prisma.event.findMany({
@@ -310,5 +312,7 @@ export async function GET(req: Request) {
     for (const it of items) if (!map.has(it.id)) map.set(it.id, it);
   }
 
-  return NextResponse.json({ events: Array.from(map.values()) });
+  const payload = { events: Array.from(map.values()) };
+  await cacheSet(cacheKey, payload, 20); // 20s TTL
+  return NextResponse.json(payload);
 }

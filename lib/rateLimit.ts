@@ -41,11 +41,13 @@ function createFixedWindowLimiter(opts: {
       const windowId = Math.floor(epochSeconds(now) / windowSeconds);
       const key = `${prefix}:${windowId}:${rawKey}`;
 
-      // 2 ops: INCR + TTL (set expiry when first used)
       const p = redis.pipeline();
       p.incr(key);
       p.ttl(key);
-      const [count, ttl] = (await p.exec()) as unknown as [number, number];
+
+      const [countRaw, ttlRaw] = await p.exec<[number, number]>();
+      const count = Number(countRaw ?? 0);
+      const ttl = Number(ttlRaw ?? -2);
 
       if (ttl === -1) {
         // no expiry set yet
@@ -86,7 +88,7 @@ export const limiters = {
   }),
 
   // ---------------------------------------
-  // forgot password (NEW)
+  // forgot password
   // ---------------------------------------
   forgotIpMinute: createFixedWindowLimiter({
     prefix: "rl:forgot:ip",
@@ -122,6 +124,20 @@ export const limiters = {
     windowSeconds: 60,
     max: 120,
   }),
+
+  // ---------------------------------------
+  // Upload abuse control (NEW)
+  // ---------------------------------------
+  uploadIpMinute: createFixedWindowLimiter({
+    prefix: "rl:upload:ip",
+    windowSeconds: 60,
+    max: 20,
+  }),
+  uploadUserMinute: createFixedWindowLimiter({
+    prefix: "rl:upload:user",
+    windowSeconds: 60,
+    max: 15,
+  }),
 };
 
 export async function enforceRateLimit(opts: {
@@ -142,10 +158,7 @@ export async function enforceRateLimit(opts: {
     return {
       ok: false as const,
       headers,
-      response: NextResponse.json(
-        { message: opts.message },
-        { status: 429, headers }
-      ),
+      response: NextResponse.json({ message: opts.message }, { status: 429, headers }),
     };
   }
 

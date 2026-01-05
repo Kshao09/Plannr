@@ -10,7 +10,10 @@ export type SendEmailArgs = {
   cc?: string | string[];
   bcc?: string | string[];
   replyTo?: string | string[];
-  from?: string; // optional override
+  from?: string;
+
+  // NEW: provider idempotency
+  idempotencyKey?: string;
 };
 
 export type SendEmailResult = {
@@ -22,17 +25,12 @@ export type SendEmailResult = {
 
 function defaultFrom() {
   const app = process.env.APP_NAME || "Plannr";
-
-  // Preferred: your verified domain sender (or Resend From)
   const configured = (process.env.RESEND_FROM || process.env.EMAIL_FROM || "").trim();
   if (configured) return configured;
-
-  // Fallback that works for early testing in Resend:
   return `${app} <onboarding@resend.dev>`;
 }
 
 function baseUrl() {
-  // Prefer explicit env
   const explicit = (
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.NEXTAUTH_URL ||
@@ -41,11 +39,9 @@ function baseUrl() {
 
   if (explicit) return explicit.replace(/\/$/, "");
 
-  // Vercel provides VERCEL_URL without protocol
   const vercel = process.env.VERCEL_URL?.trim();
   if (vercel) return `https://${vercel}`;
 
-  // Local fallback
   return "http://localhost:3000";
 }
 
@@ -59,17 +55,23 @@ export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
   const from = (args.from ?? defaultFrom()).trim();
   const resend = new Resend(apiKey);
 
+  const payload = {
+    from,
+    to: args.to,
+    subject: args.subject,
+    html: args.html,
+    text: args.text,
+    cc: args.cc,
+    bcc: args.bcc,
+    replyTo: args.replyTo,
+  };
+
+  // Resend JS SDK supports passing options with idempotencyKey.
+  // Some SDK versions may not have TS types for the 2nd arg yet.
+  const options = args.idempotencyKey ? { idempotencyKey: args.idempotencyKey } : undefined;
+
   try {
-    const { data, error } = await resend.emails.send({
-      from,
-      to: args.to,
-      subject: args.subject,
-      html: args.html,
-      text: args.text,
-      cc: args.cc,
-      bcc: args.bcc,
-      replyTo: args.replyTo,
-    });
+    const { data, error } = await (resend.emails.send as any)(payload, options);
 
     if (error) {
       console.error("[email] send failed:", error);
@@ -86,21 +88,18 @@ export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
 export type SendVerificationEmailArgs = {
   to: string | string[];
   token: string;
-
-  // optional passthrough overrides
   cc?: string | string[];
   bcc?: string | string[];
   replyTo?: string | string[];
   from?: string;
+  idempotencyKey?: string;
 };
 
-// Overloads: allow both the “old” call style and the “token” style
 export function sendVerificationEmail(args: SendEmailArgs): Promise<SendEmailResult>;
 export function sendVerificationEmail(args: SendVerificationEmailArgs): Promise<SendEmailResult>;
 export async function sendVerificationEmail(
   args: SendEmailArgs | SendVerificationEmailArgs
 ): Promise<SendEmailResult> {
-  // New style: { to, token }
   if ("token" in args) {
     const app = process.env.APP_NAME || "Plannr";
     const verifyUrl = `${baseUrl()}/api/auth/verify-email?token=${encodeURIComponent(args.token)}`;
@@ -133,9 +132,9 @@ export async function sendVerificationEmail(
       bcc: args.bcc,
       replyTo: args.replyTo,
       from: args.from,
+      idempotencyKey: args.idempotencyKey,
     });
   }
 
-  // Old style: { to, subject, html, ... }
   return sendEmail(args);
 }

@@ -1,12 +1,17 @@
+// app/api/events/[slug]/images/route.ts
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import path from "path";
-import fs from "fs/promises";
 import crypto from "crypto";
 import { revalidatePath } from "next/cache";
+import { put, del } from "@vercel/blob";
+import { enforceRateLimit, limiters } from "@/lib/rateLimit";
+import { getClientIp } from "@/lib/ip";
 
 export const runtime = "nodejs";
+
+const MAX_BYTES = 8 * 1024 * 1024; // 8MB (see note below for Vercel body limits)
+const MAX_IMAGES = 5;
 
 async function resolveUser(session: any): Promise<{ userId: string | null; role: string | null }> {
   const su = session?.user ?? {};
@@ -40,13 +45,6 @@ async function getEventForOrganizer(slug: string, userId: string) {
   return { status: 200 as const, error: null, event };
 }
 
-function safeAbsPathForEventUpload(eventId: string, url: string) {
-  const rel = (url.startsWith("/") ? url.slice(1) : url).replace(/\\/g, "/");
-  const expectedPrefix = `uploads/events/${eventId}/`;
-  if (!rel.startsWith(expectedPrefix)) return null;
-  return path.join(process.cwd(), "public", rel);
-}
-
 function isAllowedImageType(mime: string) {
   return (
     mime === "image/png" ||
@@ -57,7 +55,19 @@ function isAllowedImageType(mime: string) {
   );
 }
 
-/** POST: upload images */
+function extFromType(mime: string) {
+  if (mime === "image/png") return "png";
+  if (mime === "image/webp") return "webp";
+  if (mime === "image/gif") return "gif";
+  return "jpg";
+}
+
+function looksLikeVercelBlobUrl(url: string) {
+  // conservative check; if it's not a blob URL, we just won't call del()
+  return /^https:\/\/.+\/.+/.test(url) && url.includes("blob.vercel-storage.com");
+}
+
+/** POST: upload images (stores in Vercel Blob, pushes URLs into Event.images[]) */
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
 
@@ -68,14 +78,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (role !== "ORGANIZER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  // Abuse control
+  const ip = getClientIp(req);
+  const rl1 = await enforceRateLimit({ limiter: limiters.uploadIpMinute, key: ip, message: "Too many uploads" });
+  if (!rl1.ok) return rl1.response;
+
+  const rl2 = await enforceRateLimit({ limiter: limiters.uploadUserMinute, key: userId, message: "Too many uploads" });
+  if (!rl2.ok) return rl2.response;
+
   const guard = await getEventForOrganizer(slug, userId);
   if (!guard.event) return NextResponse.json({ error: guard.error }, { status: guard.status });
 
   const event = guard.event;
 
   const form = await req.formData();
-
-  // ✅ accept both keys: "images" (your forms) and "files"
   const files = [
     ...form.getAll("images"),
     ...form.getAll("files"),
@@ -91,33 +107,35 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         { status: 400 }
       );
     }
+    if (f.size > MAX_BYTES) {
+      return NextResponse.json({ error: "File too large (max 8MB)." }, { status: 400 });
+    }
   }
 
   const existing = Array.isArray(event.images) ? (event.images as string[]) : [];
-  if (existing.length + files.length > 5) {
-    return NextResponse.json({ error: "Max 5 images per event" }, { status: 400 });
+  if (existing.length + files.length > MAX_IMAGES) {
+    return NextResponse.json({ error: `Max ${MAX_IMAGES} images per event` }, { status: 400 });
   }
 
-  const relDir = path.join("uploads", "events", event.id);
-  const absDir = path.join(process.cwd(), "public", relDir);
-  await fs.mkdir(absDir, { recursive: true });
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    return NextResponse.json(
+      { error: "Missing BLOB_READ_WRITE_TOKEN (connect Blob store and pull env vars)." },
+      { status: 500 }
+    );
+  }
 
   const newUrls: string[] = [];
   for (const file of files) {
-    const ext =
-      file.type === "image/png"
-        ? "png"
-        : file.type === "image/webp"
-        ? "webp"
-        : file.type === "image/gif"
-        ? "gif"
-        : "jpg";
+    const ext = extFromType(file.type);
+    const name = `${Date.now()}-${crypto.randomUUID()}.${ext}`;
 
-    const buf = Buffer.from(await file.arrayBuffer());
-    const name = `${crypto.randomUUID()}.${ext}`;
-    const absPath = path.join(absDir, name);
-    await fs.writeFile(absPath, buf);
-    newUrls.push(`/${relDir.replace(/\\/g, "/")}/${name}`);
+    const blob = await put(`events/${event.id}/${name}`, file, {
+      access: "public",
+      contentType: file.type,
+      addRandomSuffix: true,
+    });
+
+    newUrls.push(blob.url);
   }
 
   const updated = await prisma.event.update({
@@ -129,11 +147,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     select: { images: true, image: true },
   });
 
-  // ✅ update public pages
   revalidatePath("/public/events");
   revalidatePath(`/public/events/${slug}`);
 
-  return NextResponse.json({ ok: true, images: updated.images, image: updated.image });
+  return NextResponse.json(
+    { ok: true, images: updated.images, image: updated.image },
+    { headers: rl2.headers } // include RL headers
+  );
 }
 
 /** PATCH: set cover image (must be one of images[]) */
@@ -171,7 +191,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
   return NextResponse.json({ ok: true, images: updated.images, image: updated.image });
 }
 
-/** DELETE: remove image (and delete file from /public if safe) */
+/** DELETE: remove image (and delete from Blob if it is a blob URL) */
 export async function DELETE(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
 
@@ -197,21 +217,19 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ slug:
   const nextImages = imgs.filter((x) => x !== url);
   const nextCover = event.image === url ? nextImages[0] ?? null : event.image ?? null;
 
-  const abs = safeAbsPathForEventUpload(event.id, url);
-  if (abs) {
+  // Best effort delete from Blob (only if looks like blob URL)
+  if (looksLikeVercelBlobUrl(url) && process.env.BLOB_READ_WRITE_TOKEN) {
     try {
-      await fs.unlink(abs);
-    } catch {
-      // ignore
+      await del(url);
+    } catch (e) {
+      // ignore delete failures (we still remove from DB)
+      console.warn("[images] blob delete failed:", (e as any)?.message ?? e);
     }
   }
 
   const updated = await prisma.event.update({
     where: { id: event.id },
-    data: {
-      images: { set: nextImages },
-      image: nextCover,
-    },
+    data: { images: { set: nextImages }, image: nextCover },
     select: { images: true, image: true },
   });
 

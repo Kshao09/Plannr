@@ -73,6 +73,7 @@ export async function emailRsvpUpdated(args: {
   eventUrl: string;
   status: RSVPStatus;
   attendanceState: AttendanceState;
+  idempotencyKey?: string;
 }) {
   const name = args.name?.trim() ? args.name!.trim() : "there";
   const eventTitle = args.eventTitle;
@@ -91,7 +92,6 @@ export async function emailRsvpUpdated(args: {
     headline = `You’re “Maybe”`;
     message = `You’re marked as <b>Maybe</b> for <b>${esc(eventTitle)}</b>.`;
   } else {
-    // GOING
     if (args.attendanceState === "WAITLISTED") {
       subject = `Waitlisted: ${eventTitle}`;
       headline = `You’re on the waitlist`;
@@ -121,6 +121,7 @@ export async function emailRsvpUpdated(args: {
     subject,
     html,
     text,
+    idempotencyKey: args.idempotencyKey,
   });
 }
 
@@ -129,6 +130,7 @@ export async function emailWaitlistPromoted(args: {
   name?: string | null;
   eventTitle: string;
   eventUrl: string;
+  idempotencyKey?: string;
 }) {
   const name = args.name?.trim() ? args.name!.trim() : "there";
   const eventTitle = args.eventTitle;
@@ -153,11 +155,12 @@ export async function emailWaitlistPromoted(args: {
     subject,
     html,
     text,
+    idempotencyKey: args.idempotencyKey,
   });
 }
 
 /* =========================
-   NEW: EVENT UPDATED / CANCELLED
+   EVENT UPDATED / CANCELLED
    ========================= */
 
 export async function emailEventUpdated(args: {
@@ -170,16 +173,17 @@ export async function emailEventUpdated(args: {
   endAt: Date | null;
   locationName: string | null;
   address: string | null;
+  idempotencyKey?: string;
 }) {
   const name = args.name?.trim() ? args.name!.trim() : "there";
 
   const changeLines = args.changes
     .map((c) => {
       const label =
-      c.field === "location" ? "Location" :
-      c.field === "time" ? "Time" :
-      c.field === "capacity" ? "Capacity" :
-      "Waitlist";
+        c.field === "location" ? "Location" :
+        c.field === "time" ? "Time" :
+        c.field === "capacity" ? "Capacity" :
+        "Waitlist";
 
       return `<li><b>${label}</b><br/>From: ${esc(c.from || "(empty)")}<br/>To: ${esc(c.to || "(empty)")}</li>`;
     })
@@ -218,6 +222,7 @@ export async function emailEventUpdated(args: {
     subject,
     html,
     text,
+    idempotencyKey: args.idempotencyKey,
   });
 }
 
@@ -230,6 +235,7 @@ export async function emailEventCancelled(args: {
   endAt: Date | null;
   locationName: string | null;
   address: string | null;
+  idempotencyKey?: string;
 }) {
   const name = args.name?.trim() ? args.name!.trim() : "there";
 
@@ -262,5 +268,6 @@ export async function emailEventCancelled(args: {
     subject,
     html,
     text,
+    idempotencyKey: args.idempotencyKey,
   });
 }
