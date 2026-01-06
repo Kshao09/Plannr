@@ -41,33 +41,39 @@ function createFixedWindowLimiter(opts: {
       const windowId = Math.floor(epochSeconds(now) / windowSeconds);
       const key = `${prefix}:${windowId}:${rawKey}`;
 
+      // 2 ops: INCR + TTL (set expiry when first used)
       const p = redis.pipeline();
       p.incr(key);
       p.ttl(key);
-
-      const [countRaw, ttlRaw] = await p.exec<[number, number]>();
-      const count = Number(countRaw ?? 0);
-      const ttl = Number(ttlRaw ?? -2);
+      const [count, ttl] = (await p.exec()) as unknown as [number, number];
 
       if (ttl === -1) {
-        // no expiry set yet
         await redis.expire(key, windowSeconds);
       }
 
       const remaining = Math.max(0, max - count);
       const reset = (windowId + 1) * windowSeconds;
 
-      return {
-        ok: count <= max,
-        limit: max,
-        remaining,
-        reset,
-      };
+      return { ok: count <= max, limit: max, remaining, reset };
     },
   };
 }
 
 export const limiters = {
+  // ---------------------------------------
+  // uploads (NEW)
+  // ---------------------------------------
+  uploadIpMinute: createFixedWindowLimiter({
+    prefix: "rl:upload:ip",
+    windowSeconds: 60,
+    max: 20,
+  }),
+  uploadUserMinute: createFixedWindowLimiter({
+    prefix: "rl:upload:user",
+    windowSeconds: 60,
+    max: 12,
+  }),
+
   // ---------------------------------------
   // resend verification
   // ---------------------------------------
@@ -123,20 +129,6 @@ export const limiters = {
     prefix: "rl:rsvp:event",
     windowSeconds: 60,
     max: 120,
-  }),
-
-  // ---------------------------------------
-  // Upload abuse control (NEW)
-  // ---------------------------------------
-  uploadIpMinute: createFixedWindowLimiter({
-    prefix: "rl:upload:ip",
-    windowSeconds: 60,
-    max: 20,
-  }),
-  uploadUserMinute: createFixedWindowLimiter({
-    prefix: "rl:upload:user",
-    windowSeconds: 60,
-    max: 15,
   }),
 };
 

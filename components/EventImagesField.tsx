@@ -1,63 +1,91 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+
+function uniqNonEmpty(list: string[]) {
+  const out: string[] = [];
+  for (const s of list) {
+    const v = (s ?? "").trim();
+    if (!v) continue;
+    if (!out.includes(v)) out.push(v);
+  }
+  return out;
+}
+
+function normalizeFromServer(server: { image: string | null; images: string[] | null | undefined }) {
+  const cover = (server.image ?? "").trim();
+  const imgs = Array.isArray(server.images) ? server.images : [];
+  const gallery = imgs.map((x) => (x ?? "").trim()).filter((x) => x && x !== cover);
+  return { cover, images: gallery };
+}
 
 export default function EventImagesField({
+  slug, // ✅ if provided, uses /api/events/[slug]/images (recommended for edit)
   cover,
   images,
   onChange,
-  maxImages = 5,
+  maxTotal = 5,
   onUploadingChange,
 }: {
+  slug?: string;
   cover: string;
   images: string[];
   onChange: (next: { cover: string; images: string[] }) => void;
-  maxImages?: number;
-  onUploadingChange?: (uploading: boolean) => void; // ✅ NEW (optional)
+  maxTotal?: number; // max TOTAL unique images incl cover
+  onUploadingChange?: (uploading: boolean) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const normalizedCover = (cover ?? "").trim();
   const normalizedImages = (images ?? []).map((x) => (x ?? "").trim()).filter(Boolean);
 
-  const all = (() => {
-    const out: string[] = [];
-    if (normalizedCover) out.push(normalizedCover);
-    for (const u of normalizedImages) if (u && u !== normalizedCover && !out.includes(u)) out.push(u);
-    return out;
-  })();
+  // total unique across cover + images[]
+  const totalUnique = useMemo(() => {
+    return uniqNonEmpty([normalizedCover, ...normalizedImages].filter(Boolean));
+  }, [normalizedCover, normalizedImages]);
 
-  const galleryCount = normalizedImages.filter((u) => u && u !== normalizedCover).length;
-  const remainingGallery = Math.max(0, maxImages - galleryCount);
-
-  const hasCover = !!normalizedCover;
-  const isFull = hasCover && remainingGallery === 0;
+  const remainingSlots = Math.max(0, maxTotal - totalUnique.length);
+  const isFull = remainingSlots === 0;
 
   function openPicker() {
     fileRef.current?.click();
   }
 
-  async function uploadOne(file: File): Promise<string> {
+  async function uploadDraftOne(file: File): Promise<string> {
     const fd = new FormData();
     fd.append("file", file);
 
     const res = await fetch("/api/uploads/cover", { method: "POST", body: fd });
-    const data = await res.json().catch(() => ({}));
+    const text = await res.text();
+    let data: any = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { error: text };
+    }
     if (!res.ok) throw new Error(data?.error || "Upload failed");
     if (!data?.url) throw new Error("Upload failed: missing url");
     return String(data.url);
   }
 
-  function uniq(list: string[]) {
-    const out: string[] = [];
-    for (const s of list) {
-      const v = (s ?? "").trim();
-      if (!v) continue;
-      if (!out.includes(v)) out.push(v);
-    }
-    return out;
+  async function uploadPersisted(files: File[]) {
+    if (!slug) throw new Error("Missing slug for persisted upload");
+
+    const fd = new FormData();
+    for (const f of files) fd.append("images", f);
+
+    const res = await fetch(`/api/events/${encodeURIComponent(slug)}/images`, {
+      method: "POST",
+      body: fd,
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || data?.message || "Upload failed");
+
+    if (!data?.images) throw new Error("Upload failed: missing images");
+    onChange(normalizeFromServer({ image: data.image ?? null, images: data.images ?? [] }));
   }
 
   async function onPickFiles(files: FileList | null) {
@@ -65,85 +93,122 @@ export default function EventImagesField({
 
     setErr(null);
 
-    const coverSlot = normalizedCover ? 0 : 1;
-    const totalSlots = coverSlot + remainingGallery;
-
-    const selected = Array.from(files)
-      .filter((f) => f.type.startsWith("image/"))
-      .slice(0, totalSlots);
-
+    const selected = Array.from(files).filter((f) => f.type.startsWith("image/")).slice(0, remainingSlots);
     if (selected.length === 0) {
-      setErr("Only image files are allowed (JPG/PNG/WebP).");
+      setErr("Only image files are allowed.");
       return;
     }
 
-    setUploading(true);
+    setBusy(true);
     onUploadingChange?.(true);
 
     try {
-      let nextCover = normalizedCover;
-      let nextGallery = normalizedImages.filter((u) => u && u !== nextCover);
+      if (slug) {
+        await uploadPersisted(selected);
+      } else {
+        // draft mode (create form): upload to /api/uploads/cover and update local form
+        let nextCover = normalizedCover;
+        let nextImages = [...normalizedImages];
 
-      for (const f of selected) {
-        const url = await uploadOne(f);
+        for (const f of selected) {
+          const url = await uploadDraftOne(f);
+          const nextUnique = uniqNonEmpty([nextCover, ...nextImages, url].filter(Boolean));
+          if (nextUnique.length > maxTotal) break;
 
-        if (!nextCover) {
-          nextCover = url;
-        } else if (nextGallery.length < maxImages) {
-          nextGallery.push(url);
+          if (!nextCover) nextCover = url;
+          else nextImages.push(url);
         }
-      }
 
-      nextGallery = uniq(nextGallery).slice(0, maxImages);
-      onChange({ cover: nextCover, images: nextGallery });
+        nextImages = uniqNonEmpty(nextImages.filter((x) => x && x !== nextCover));
+        onChange({ cover: nextCover, images: nextImages });
+      }
     } catch (e: any) {
       setErr(e?.message ?? "Upload failed");
     } finally {
-      setUploading(false);
+      setBusy(false);
       onUploadingChange?.(false);
       if (fileRef.current) fileRef.current.value = "";
     }
   }
 
-  function setAsCover(url: string) {
+  async function setAsCover(url: string) {
+    const u = (url ?? "").trim();
+    if (!u || u === normalizedCover) return;
+
+    setErr(null);
+    setBusy(true);
+    try {
+      if (slug) {
+        const res = await fetch(`/api/events/${encodeURIComponent(slug)}/images`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: u }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || data?.message || "Failed to set cover");
+        onChange(normalizeFromServer({ image: data.image ?? null, images: data.images ?? [] }));
+      } else {
+        // draft mode: just reorder locally
+        const nextCover = u;
+        const nextImages = uniqNonEmpty([normalizedCover, ...normalizedImages].filter((x) => x && x !== nextCover));
+        onChange({ cover: nextCover, images: nextImages });
+      }
+    } catch (e: any) {
+      setErr(e?.message ?? "Failed to set cover");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteImage(url: string) {
     const u = (url ?? "").trim();
     if (!u) return;
 
-    const oldCover = normalizedCover;
-    if (u === oldCover) return;
-
-    let nextGallery = normalizedImages.filter((x) => x && x !== u && x !== oldCover);
-
-    if (oldCover) {
-      if (nextGallery.length >= maxImages) nextGallery = nextGallery.slice(0, maxImages - 1);
-      nextGallery = [oldCover, ...nextGallery];
+    setErr(null);
+    setBusy(true);
+    try {
+      if (slug) {
+        const res = await fetch(`/api/events/${encodeURIComponent(slug)}/images`, {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: u }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || data?.message || "Failed to delete");
+        onChange(normalizeFromServer({ image: data.image ?? null, images: data.images ?? [] }));
+      } else {
+        // draft mode: local delete only (does not delete blob)
+        if (u === normalizedCover) {
+          const remaining = normalizedImages.filter((x) => x && x !== u);
+          const newCover = remaining[0] ?? "";
+          const rest = remaining.slice(1).filter((x) => x && x !== newCover);
+          onChange({ cover: newCover, images: rest });
+        } else {
+          onChange({ cover: normalizedCover, images: normalizedImages.filter((x) => x && x !== u) });
+        }
+      }
+    } catch (e: any) {
+      setErr(e?.message ?? "Failed to delete");
+    } finally {
+      setBusy(false);
     }
-
-    nextGallery = uniq(nextGallery).slice(0, maxImages);
-    onChange({ cover: u, images: nextGallery });
   }
 
-  function deleteImage(url: string) {
-    const u = (url ?? "").trim();
-    if (!u) return;
-
-    if (u === normalizedCover) {
-      const g = normalizedImages.filter((x) => x && x !== normalizedCover);
-      const newCover = g[0] ?? "";
-      const rest = g.slice(1);
-      onChange({ cover: newCover, images: rest });
-      return;
-    }
-
-    const nextGallery = normalizedImages.filter((x) => x && x !== u && x !== normalizedCover);
-    onChange({ cover: normalizedCover, images: nextGallery });
-  }
+  const all = useMemo(() => {
+    const out: string[] = [];
+    if (normalizedCover) out.push(normalizedCover);
+    for (const u of normalizedImages) if (u && u !== normalizedCover && !out.includes(u)) out.push(u);
+    return out;
+  }, [normalizedCover, normalizedImages]);
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="text-sm font-medium">Images</div>
+          <div className="text-xs text-zinc-400">
+            Max {maxTotal} total images (cover included). {slug ? "Changes are saved immediately." : "Saved when you submit."}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -158,13 +223,11 @@ export default function EventImagesField({
           <button
             type="button"
             onClick={openPicker}
-            disabled={uploading || isFull}
+            disabled={busy || isFull}
             className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm disabled:opacity-50"
-            title={isFull ? "Gallery is full" : "Upload images"}
+            title={isFull ? "Image limit reached" : "Upload images"}
           >
-            {uploading
-              ? "Uploading..."
-              : `Add images (${hasCover ? remainingGallery : remainingGallery + 1} slots)`}
+            {busy ? "Working..." : `Add images (${remainingSlots} slots)`}
           </button>
         </div>
       </div>
@@ -195,7 +258,7 @@ export default function EventImagesField({
                     <button
                       type="button"
                       onClick={() => setAsCover(url)}
-                      disabled={uploading || isCover}
+                      disabled={busy || isCover}
                       className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-xs disabled:opacity-50"
                     >
                       {isCover ? "Cover" : "Set cover"}
@@ -204,7 +267,7 @@ export default function EventImagesField({
                     <button
                       type="button"
                       onClick={() => deleteImage(url)}
-                      disabled={uploading}
+                      disabled={busy}
                       className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-xs disabled:opacity-50"
                     >
                       Delete

@@ -31,9 +31,7 @@ function layout(title: string, bodyHtml: string) {
   <div style="font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto;line-height:1.5;color:#111;">
     <h2 style="margin:0 0 12px 0;">${h}</h2>
     <div style="font-size:14px;color:#111;">${bodyHtml}</div>
-    <div style="margin-top:18px;font-size:12px;color:#666;">
-      Sent by Plannr
-    </div>
+    <div style="margin-top:18px;font-size:12px;color:#666;">Sent by Plannr</div>
   </div>`;
 }
 
@@ -63,7 +61,7 @@ function fmtLocation(locationName: string | null | undefined, address: string | 
 }
 
 /* =========================
-   EXISTING EMAILS
+   RSVP UPDATED
    ========================= */
 
 export async function emailRsvpUpdated(args: {
@@ -92,6 +90,7 @@ export async function emailRsvpUpdated(args: {
     headline = `You’re “Maybe”`;
     message = `You’re marked as <b>Maybe</b> for <b>${esc(eventTitle)}</b>.`;
   } else {
+    // GOING
     if (args.attendanceState === "WAITLISTED") {
       subject = `Waitlisted: ${eventTitle}`;
       headline = `You’re on the waitlist`;
@@ -180,10 +179,7 @@ export async function emailEventUpdated(args: {
   const changeLines = args.changes
     .map((c) => {
       const label =
-        c.field === "location" ? "Location" :
-        c.field === "time" ? "Time" :
-        c.field === "capacity" ? "Capacity" :
-        "Waitlist";
+        c.field === "location" ? "Location" : c.field === "time" ? "Time" : c.field === "capacity" ? "Capacity" : "Waitlist";
 
       return `<li><b>${label}</b><br/>From: ${esc(c.from || "(empty)")}<br/>To: ${esc(c.to || "(empty)")}</li>`;
     })
