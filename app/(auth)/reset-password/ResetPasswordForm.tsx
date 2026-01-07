@@ -37,23 +37,41 @@ export default function ResetPasswordForm({ token }: { token: string }) {
     }
   }
 
+  const input =
+    "w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-zinc-400 focus:ring-4 focus:ring-zinc-200/70";
+
   return (
-    <div className="mx-auto max-w-md px-4 py-10">
-      <h1 className="text-2xl font-semibold">Reset password</h1>
-      <p className="mt-2 text-sm text-zinc-400">Choose a new password.</p>
+    <div className="mx-auto max-w-md px-6 py-16">
+      <div className="rounded-3xl border border-zinc-200 bg-white p-8 shadow-[0_20px_60px_rgba(0,0,0,0.08)]">
+        <h1 className="text-2xl font-semibold text-zinc-900">Reset password</h1>
+        <p className="mt-2 text-sm text-zinc-600">Choose a new password.</p>
 
-      <form onSubmit={submit} className="mt-6 space-y-3">
-        <input className="w-full rounded-xl border border-white/10 bg-transparent px-3 py-2"
-          type="password" placeholder="New password" value={pw} onChange={(e) => setPw(e.target.value)} />
-        <input className="w-full rounded-xl border border-white/10 bg-transparent px-3 py-2"
-          type="password" placeholder="Confirm new password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
+        <form onSubmit={submit} className="mt-6 space-y-3">
+          <input
+            className={input}
+            type="password"
+            placeholder="New password"
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+          />
+          <input
+            className={input}
+            type="password"
+            placeholder="Confirm new password"
+            value={pw2}
+            onChange={(e) => setPw2(e.target.value)}
+          />
 
-        <button className="w-full rounded-xl bg-white/10 px-3 py-2 hover:bg-white/15 disabled:opacity-50"
-          disabled={loading}>
-          {loading ? "Updating..." : "Update password"}
-        </button>
-        {msg ? <div className="text-sm text-zinc-200">{msg}</div> : null}
-      </form>
+          <button
+            className="w-full rounded-2xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-zinc-300"
+            disabled={loading}
+          >
+            {loading ? "Updating..." : "Update password"}
+          </button>
+
+          {msg ? <div className="text-sm text-zinc-700">{msg}</div> : null}
+        </form>
+      </div>
     </div>
   );
 }

@@ -63,8 +63,6 @@ export async function signupAction(
     return { error: msg };
   }
 
-  // Send email separately (don’t block signup UX)
-    // Send email separately (don’t block signup UX)
   let sent = false;
   try {
     const result = await sendVerificationEmail({ to: email, token });

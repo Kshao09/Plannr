@@ -6,6 +6,10 @@ export default auth((req) => {
   const { pathname } = req.nextUrl;
   const isLoggedIn = !!req.auth;
 
+  // Add pathname header for Server Components (MarketingNav)
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-pathname", pathname);
+
   // Only protect these areas
   const isProtected =
     pathname.startsWith("/app/dashboard") ||
@@ -22,13 +26,25 @@ export default auth((req) => {
 
   // Organizer-only areas
   const role = (req.auth?.user as any)?.role;
-  if ((pathname.startsWith("/organizer/create") || pathname.startsWith("/organizer")) && role !== "ORGANIZER") {
+  if (
+    (pathname.startsWith("/organizer/create") || pathname.startsWith("/organizer")) &&
+    role !== "ORGANIZER"
+  ) {
     return NextResponse.redirect(new URL("/app/dashboard", req.url));
   }
 
-  return NextResponse.next();
+  // IMPORTANT: pass the modified headers
+  return NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 });
 
 export const config = {
-  matcher: ["/app/dashboard/:path*", "/organizer/create/:path*", "/organizer/:path*", "/community/:path*", "/saved/:path*"],
+  matcher: [
+    "/app/dashboard/:path*",
+    "/organizer/create/:path*",
+    "/organizer/:path*",
+    "/community/:path*",
+    "/saved/:path*",
+  ],
 };

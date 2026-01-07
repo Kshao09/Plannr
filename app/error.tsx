@@ -10,11 +10,11 @@ export default function Error({
   return (
     <div className="mx-auto max-w-2xl px-6 py-16 text-white">
       <h1 className="text-2xl font-semibold">Something went wrong</h1>
-      <p className="mt-3 text-sm text-zinc-300">
+      <p className="mt-3 text-sm text-black">
         {error?.message || "A server render crashed."}
       </p>
       {error?.digest ? (
-        <p className="mt-2 text-xs text-zinc-500">Digest: {error.digest}</p>
+        <p className="mt-2 text-xs text-black">Digest: {error.digest}</p>
       ) : null}
 
       <button

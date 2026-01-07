@@ -119,12 +119,12 @@ export default async function SavedPage({
           </Link>
 
           <div>
-            <h1 className="text-3xl font-semibold text-white">Saved</h1>
-            <p className="mt-2 text-sm text-zinc-400">Your bookmarked events.</p>
+            <h1 className="text-3xl font-semibold text-black">Saved</h1>
+            <p className="mt-2 text-sm text-zinc-800">Your bookmarked events.</p>
           </div>
         </div>
 
-        <div className="text-sm text-zinc-300">
+        <div className="text-sm text-zinc-800">
           {total} event{total === 1 ? "" : "s"}
         </div>
       </div>

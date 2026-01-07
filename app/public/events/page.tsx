@@ -20,25 +20,25 @@ function toArrayParam(v: string | string[] | undefined) {
   return v.split(",").filter(Boolean);
 }
 
-async function resolveUserId(session: any) {
-  const sessionUser = session?.user ?? {};
-  const sessionId = sessionUser?.id as string | undefined;
-  const sessionEmail = sessionUser?.email as string | undefined;
+async function resolveUserContext(session: any): Promise<{ userId: string | null; role: "MEMBER" | "ORGANIZER" | null }> {
+  const su = session?.user ?? {};
+  const sessionId = (su as any)?.id as string | undefined;
+  const sessionEmail = (su as any)?.email as string | undefined;
+  const sessionRole = (su as any)?.role as "MEMBER" | "ORGANIZER" | undefined;
 
-  if (sessionId) return sessionId;
+  if (sessionId && sessionRole) return { userId: sessionId, role: sessionRole };
 
   if (sessionEmail) {
     const dbUser = await prisma.user.findUnique({
       where: { email: sessionEmail },
-      select: { id: true },
+      select: { id: true, role: true },
     });
-    return dbUser?.id ?? null;
+    return { userId: dbUser?.id ?? sessionId ?? null, role: (sessionRole ?? dbUser?.role ?? null) as any };
   }
 
-  return null;
+  return { userId: sessionId ?? null, role: sessionRole ?? null };
 }
 
-// ✅ Minimal shape we need from getEvents()
 type EventsItem = {
   id: string;
   title: string;
@@ -58,11 +58,7 @@ type EventsResponse = {
   items: EventsItem[];
 };
 
-export default async function EventsPage({
-  searchParams,
-}: {
-  searchParams: Promise<SP> | SP;
-}) {
+export default async function EventsPage({ searchParams }: { searchParams: Promise<SP> | SP }) {
   const sp = await Promise.resolve(searchParams);
 
   const page = Number(sp.page ?? "1") || 1;
@@ -76,15 +72,28 @@ export default async function EventsPage({
   const loc = toArrayParam(sp.loc);
   const category = toArrayParam(sp.category);
 
+  // ✅ NEW: "By you"
+  const mine = String(sp.mine ?? "") === "1";
+
   const session = await auth();
-  const userId = session?.user ? await resolveUserId(session) : null;
+  const { userId, role } = session?.user ? await resolveUserContext(session) : { userId: null, role: null };
+  const showMine = role === "ORGANIZER" && !!userId;
 
   const [data, options] = await Promise.all([
-    getEvents({ page, pageSize, q, range, from, to, loc, category }) as Promise<EventsResponse>,
+    getEvents({
+      page,
+      pageSize,
+      q,
+      range,
+      from,
+      to,
+      loc,
+      category,
+      organizerId: mine && userId ? userId : undefined,
+    }) as Promise<EventsResponse>,
     getEventFilterOptions(),
   ]);
 
-    // Fetch saved IDs for just these events (if logged in)
   const ids = data.items.map((x) => x.id);
 
   const savedRows: SavedIdRow[] =
@@ -111,22 +120,22 @@ export default async function EventsPage({
   }));
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen bg-white text-zinc-900">
       <div className="mx-auto w-full max-w-6xl px-4 py-6">
         <div className="mb-4 flex items-center gap-3">
           <Link
             href="/app/dashboard"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-200 bg-white hover:bg-zinc-50"
           >
             ←
           </Link>
           <h1 className="text-4xl font-semibold tracking-tight">Events</h1>
         </div>
 
-        <EventsFilters locations={options.locations} categories={options.categories} />
+        <EventsFilters locations={options.locations} categories={options.categories} showMine={showMine} />
 
         {cards.length === 0 ? (
-          <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-6 text-white/70">
+          <div className="mt-5 rounded-2xl border border-zinc-200 bg-white p-6 text-zinc-900">
             No events match your filters.
           </div>
         ) : (
@@ -139,7 +148,7 @@ export default async function EventsPage({
 
         <div className="mt-8">
           <Pagination page={data.page} totalPages={data.totalPages} />
-          <div className="mt-3 text-xs text-white/40">
+          <div className="mt-3 text-xs text-zinc-700">
             Showing page {data.page} of {data.totalPages} • {data.total} results
           </div>
         </div>

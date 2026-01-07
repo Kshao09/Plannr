@@ -24,7 +24,6 @@ function formatDateTime(d: Date) {
   }).format(d);
 }
 
-// Google Calendar needs UTC timestamps like: 20250101T130000Z
 function gcalDate(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
   return (
@@ -66,21 +65,14 @@ function buildImagesToShow(event: { image: string | null; images: unknown }) {
   return out;
 }
 
-export default async function EventDetailPage({
-  params,
-}: {
-  // ✅ Next 16: params can be a Promise
-  params: Promise<{ slug: string }>;
-}) {
+export default async function EventDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   noStore();
 
-  // ✅ unwrap params
   const { slug } = await params;
   if (!slug) notFound();
 
   const session = await auth();
 
-  // --- Resolve viewer from session (fallback to DB by email if needed) ---
   const su = session?.user ?? {};
   let userId: string | null = (su as any)?.id ?? null;
   let role: string | null = (su as any)?.role ?? null;
@@ -95,7 +87,6 @@ export default async function EventDetailPage({
     role = role ?? (dbUser?.role as any) ?? null;
   }
 
-  // ✅ If slug is not @unique in schema, use findFirst (but keep where filter!)
   const event = await prisma.event.findFirst({
     where: { slug },
     select: {
@@ -109,13 +100,10 @@ export default async function EventDetailPage({
       address: true,
       organizerId: true,
       organizer: { select: { name: true } },
-
       image: true,
       images: true,
-
       capacity: true,
       waitlistEnabled: true,
-
       checkInSecret: true,
     },
   });
@@ -137,8 +125,8 @@ export default async function EventDetailPage({
   }
 
   const locationForCalendar =
-    (event.address?.trim() ? event.address : null) ??
-    (event.locationName?.trim() ? event.locationName : null);
+    (event.locationName?.trim() ? event.locationName : null) ??
+    (event.address?.trim() ? event.address : null);
 
   const gcalUrl = buildGoogleCalendarUrl({
     title: event.title,
@@ -159,161 +147,162 @@ export default async function EventDetailPage({
 
   const disabledReason = canManage ? "Organizers can’t RSVP to their own event." : undefined;
 
+  const pill =
+    "inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-sm font-medium text-zinc-900 shadow-sm";
+
+  const card =
+    "rounded-3xl border border-zinc-200 bg-white p-5 shadow-[0_18px_60px_rgba(0,0,0,0.06)]";
+
+  const subtleCard = "rounded-3xl border border-zinc-200 bg-zinc-50 p-5";
+
+  const btn =
+    "inline-flex items-center justify-center rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 shadow-sm hover:bg-zinc-50";
+
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10">
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <Link
-            href="/public/events"
-            className="inline-flex items-center gap-2 text-sm text-zinc-300 hover:text-white"
-          >
-            <span className="text-lg leading-none">←</span>
-            Back to Events
-          </Link>
+    <main className="min-h-screen bg-gradient-to-b from-white to-zinc-50 text-zinc-900">
+      <div className="relative mx-auto max-w-6xl px-4 py-10">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <Link
+              href="/public/events"
+              className="inline-flex items-center gap-2 text-sm font-medium text-zinc-800 hover:text-zinc-900"
+            >
+              <span className="text-lg leading-none">←</span>
+              Back to Events
+            </Link>
 
-          <h1 className="mt-3 truncate text-4xl font-semibold tracking-tight text-white">
-            {event.title}
-          </h1>
+            <h1 className="mt-3 truncate text-4xl font-semibold tracking-tight text-zinc-900">
+              {event.title}
+            </h1>
 
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-zinc-400">
-            {event.locationName ? (
-              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                {event.locationName}
-              </span>
-            ) : null}
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+              {event.locationName ? <span className={pill}>{event.locationName}</span> : null}
 
-            {event.organizer?.name ? (
-              <span className="text-zinc-500">by {event.organizer.name}</span>
-            ) : null}
-
-            {typeof event.capacity === "number" ? (
-              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-zinc-300">
-                Capacity: <b className="text-white">{event.capacity}</b>
-                {event.waitlistEnabled ? (
-                  <span className="text-zinc-400"> • waitlist on</span>
-                ) : (
-                  <span className="text-zinc-500"> • waitlist off</span>
-                )}
-              </span>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="shrink-0 flex flex-wrap items-center gap-2">
-          <a
-            href={`/api/events/${event.slug}/ics`}
-            className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/10"
-          >
-            Download .ics
-          </a>
-
-          <a
-            href={gcalUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/10"
-          >
-            Add to Google ↗
-          </a>
-
-          {canManage ? (
-            <>
-              <Link
-                href={`/app/organizer/events/${event.slug}/edit`}
-                className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/10"
-              >
-                Edit
-              </Link>
-
-              {/* ✅ NEW: Delete button next to Edit */}
-              <DeleteEventButton slug={event.slug} />
-            </>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-zinc-950/70 shadow-2xl">
-        <div className="relative space-y-5 p-6 md:p-8">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-4 transition hover:bg-white/[0.08]">
-              <div className="text-sm font-semibold text-zinc-200">When</div>
-              <div className="mt-1 text-sm text-zinc-100">
-                {formatDateTime(event.startAt)} <span className="text-zinc-400">→</span>{" "}
-                {formatDateTime(event.endAt)}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-4 transition hover:bg-white/[0.08]">
-              <div className="text-sm font-semibold text-zinc-200">Where</div>
-              <div className="mt-1 text-sm text-zinc-100">
-                {event.locationName || <span className="text-zinc-400">—</span>}
-              </div>
-              {event.address ? (
-                <div className="mt-1 text-sm text-zinc-300">{event.address}</div>
+              {event.organizer?.name ? (
+                <span className="text-zinc-700">
+                  by <span className="font-medium text-zinc-900">{event.organizer.name}</span>
+                </span>
               ) : null}
+
+              <span className={pill}>
+                Capacity:{" "}
+                <span className="font-semibold text-zinc-900">
+                  {typeof event.capacity === "number" ? event.capacity : "—"}
+                </span>
+                <span className="text-zinc-400">•</span>
+                <span className="text-zinc-700">{event.waitlistEnabled ? "waitlist on" : "waitlist off"}</span>
+              </span>
             </div>
           </div>
 
-          {imagesToShow.length > 0 ? (
-            <EventImageCarousel images={imagesToShow} title={event.title} />
-          ) : null}
+          <div className="shrink-0 flex flex-wrap items-center gap-2">
+            <a href={`/api/events/${event.slug}/ics`} className={btn}>
+              Download .ics
+            </a>
+            <a href={gcalUrl} target="_blank" rel="noreferrer" className={btn}>
+              Add to Google ↗
+            </a>
 
-          <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-5">
-            <div className="mb-3">
-              <div className="text-sm font-semibold text-white">Share</div>
-              <div className="mt-1 text-xs text-zinc-400">
-                Scan the QR code or copy the link to share this event.
-              </div>
-            </div>
-            <QrImage
-              text={shareUrl}
-              openHref={`/app/organizer/events/${event.slug}/checkin`}
-              openLabel="Check in ↗"
-              openDisabled={!canManage}
-              showText={false}
-            />
+            {canManage ? (
+              <>
+                <Link href={`/app/organizer/events/${event.slug}/edit`} className={btn}>
+                  Edit
+                </Link>
+                <DeleteEventButton slug={event.slug} />
+              </>
+            ) : null}
           </div>
+        </div>
 
-          {canManage ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-5">
-              <div className="mb-3">
-                <div className="text-sm font-semibold text-white">Staff check-in</div>
-                <div className="mt-1 text-xs text-zinc-400">
-                  Send this QR/link to volunteers (no login). Keep the secret private.
+        <div className="grid gap-6 lg:grid-cols-12">
+          <section className="lg:col-span-8 space-y-6">
+            <div className={card}>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className={subtleCard}>
+                  <div className="text-sm font-semibold text-zinc-900">When</div>
+                  <div className="mt-2 text-sm text-zinc-800">
+                    {formatDateTime(event.startAt)} <span className="text-zinc-500">→</span>{" "}
+                    {formatDateTime(event.endAt)}
+                  </div>
+                </div>
+
+                <div className={subtleCard}>
+                  <div className="text-sm font-semibold text-zinc-900">Where</div>
+                  <div className="mt-2 text-sm text-zinc-800">{event.locationName ? event.locationName : "—"}</div>
+                  {event.address ? <div className="mt-1 text-sm text-zinc-700">{event.address}</div> : null}
                 </div>
               </div>
-
-              <QrImage
-                text={staffUrl}
-                openHref={`/checkin/${event.slug}?secret=${encodeURIComponent(event.checkInSecret)}`}
-                showText={false}
-              />
             </div>
-          ) : null}
 
-          {userId ? (
-            <EventRSVP
-              slug={event.slug}
-              initial={initial}
-              disabled={!!canManage}
-              disabledReason={disabledReason}
-            />
-          ) : (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-4 text-sm text-zinc-200">
-              Log in to RSVP.
+            {imagesToShow.length > 0 ? (
+              <div className={card}>
+                <EventImageCarousel images={imagesToShow} title={event.title} />
+              </div>
+            ) : null}
+
+            <div className={card}>
+              <div className="text-sm font-semibold text-zinc-900">Description</div>
+              <div className="mt-3 whitespace-pre-wrap text-sm leading-6 text-zinc-800">
+                {event.description?.trim() ? event.description : "No description provided."}
+              </div>
             </div>
-          )}
+          </section>
 
-          <EventAttendees eventId={event.id} slug={event.slug} canManage={!!canManage} />
-
-          <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-4 transition hover:bg-white/[0.08]">
-            <div className="text-sm font-semibold text-zinc-200">Description</div>
-            <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-100">
-              {event.description?.trim() ? event.description : "No description provided."}
+          <aside className="lg:col-span-4 space-y-6">
+            <div className={card}>
+              {userId ? (
+                <EventRSVP slug={event.slug} initial={initial} disabled={!!canManage} disabledReason={disabledReason} />
+              ) : (
+                <div className="text-sm text-zinc-900">
+                  Log in to RSVP.{" "}
+                  <Link href="/login" className="font-semibold text-zinc-900 underline">
+                    Login
+                  </Link>
+                </div>
+              )}
             </div>
-          </div>
+
+            <div className={card}>
+              <div className="mb-2">
+                <div className="text-sm font-semibold text-zinc-900">Share</div>
+                <div className="mt-1 text-xs text-zinc-700">Scan the QR code or copy the link to share this event.</div>
+              </div>
+
+              <div className="rounded-3xl border border-zinc-200 bg-white p-3">
+                <QrImage
+                  text={shareUrl}
+                  openHref={`/app/organizer/events/${event.slug}/checkin`}
+                  openLabel="Open event ↗"
+                  openDisabled={false}
+                  showText={false}
+                />
+              </div>
+            </div>
+
+            {canManage ? (
+              <div className={card}>
+                <div className="mb-2">
+                  <div className="text-sm font-semibold text-zinc-900">Staff check-in</div>
+                  <div className="mt-1 text-xs text-zinc-700">
+                    Send this QR/link to volunteers (no login). Keep the secret private.
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-zinc-200 bg-white p-3">
+                  <QrImage text={staffUrl} openHref={staffUrl} showText={false} />
+                </div>
+              </div>
+            ) : null}
+
+            {/* ✅ Hide attendees for members */}
+            {canManage ? (
+              <div className={card}>
+                <EventAttendees eventId={event.id} slug={event.slug} canManage={!!canManage} />
+              </div>
+            ) : null}
+          </aside>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

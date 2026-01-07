@@ -20,7 +20,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const isOrganizer = session?.user?.role === "ORGANIZER";
 
   return (
-    <div className="min-h-screen bg-black">
+    <div className="min-h-screen">
       <header className="border-b border-white/10">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
           <Link href="/app/dashboard" className="text-lg font-semibold text-white">

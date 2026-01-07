@@ -55,51 +55,41 @@ function ConflictModal({
     "You can’t RSVP “Going” or “Maybe” to overlapping events. Decline this event or update your other RSVP.";
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="conflict-title"
-    >
-      {/* Backdrop */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
       <button
         type="button"
         aria-label="Close modal"
-        className="absolute inset-0 cursor-default bg-black/60 backdrop-blur-sm"
+        className="absolute inset-0 cursor-default bg-black/50 backdrop-blur-sm"
         onClick={onClose}
         disabled={loading}
       />
 
-      {/* Panel */}
-      <div className="relative w-[92vw] max-w-lg rounded-3xl border border-white/10 bg-zinc-950 p-6 shadow-2xl">
+      <div className="relative w-[92vw] max-w-lg rounded-3xl border border-zinc-200 bg-white p-6 shadow-2xl">
         <div className="space-y-2">
-          <h3 id="conflict-title" className="text-lg font-semibold text-white">
-            {title}
-          </h3>
-          <p className="text-sm text-zinc-300">{desc}</p>
+          <h3 className="text-lg font-semibold text-zinc-900">{title}</h3>
+          <p className="text-sm text-zinc-700">{desc}</p>
         </div>
 
         {conflicts?.length ? (
-          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+          <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Conflicts
             </div>
             <ul className="space-y-2">
               {conflicts.slice(0, 5).map((c) => {
                 const s = fmt(toDate(c.startAt));
                 const e = fmt(toDate(c.endAt));
-                const tag =
-                  c.kind === "organized" ? "Organizing" : c.kind === "rsvp" ? "RSVP" : "Busy";
+                const tag = c.kind === "organized" ? "Organizing" : c.kind === "rsvp" ? "RSVP" : "Busy";
                 return (
-                  <li key={`${c.slug}-${s}`} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                  <li key={`${c.slug}-${s}`} className="rounded-xl border border-zinc-200 bg-white p-3">
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-white">{c.title}</div>
-                        <div className="mt-1 text-xs text-zinc-300">
+                        <div className="truncate text-sm font-semibold text-zinc-900">{c.title}</div>
+                        <div className="mt-1 text-xs text-zinc-600">
                           {s} → {e}
                         </div>
                       </div>
-                      <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-zinc-200">
+                      <span className="shrink-0 rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs text-zinc-700">
                         {tag}
                       </span>
                     </div>
@@ -107,7 +97,7 @@ function ConflictModal({
                     <div className="mt-2">
                       <Link
                         href={`/public/events/${encodeURIComponent(c.slug)}`}
-                        className="text-xs font-semibold text-blue-200 hover:underline"
+                        className="text-xs font-semibold text-blue-700 hover:underline"
                       >
                         View event
                       </Link>
@@ -122,7 +112,7 @@ function ConflictModal({
         <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
           <Link
             href="/app/dashboard"
-            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 hover:bg-white/10"
+            className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
           >
             Open calendar
           </Link>
@@ -131,7 +121,7 @@ function ConflictModal({
             type="button"
             onClick={onDecline}
             disabled={loading}
-            className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/20 disabled:opacity-60"
+            className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
           >
             Decline this event
           </button>
@@ -140,7 +130,7 @@ function ConflictModal({
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 hover:bg-white/10 disabled:opacity-60"
+            className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
           >
             Close
           </button>
@@ -168,13 +158,10 @@ export default function EventRSVP({
   const [attendanceState, setAttendanceState] = useState<AttendanceState>(initial.attendanceState);
   const [pending, startTransition] = useTransition();
 
-  // conflict modal state
   const [conflictOpen, setConflictOpen] = useState(false);
   const [conflictMessage, setConflictMessage] = useState<string | undefined>(undefined);
   const [conflictList, setConflictList] = useState<Conflict[]>([]);
-  const [_attempted, setAttempted] = useState<RSVPStatus>(null);
 
-  // sync across tabs/windows
   useEffect(() => {
     const unsub = subscribeRsvpUpdates((msg) => {
       if (msg?.type !== "rsvp:update") return;
@@ -193,7 +180,6 @@ export default function EventRSVP({
   }
 
   function makeIdempotencyKey() {
-    // one key per click attempt
     if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
@@ -203,9 +189,6 @@ export default function EventRSVP({
       const prevStatus = status;
       const prevState = attendanceState;
 
-      setAttempted(next);
-
-      // optimistic
       setStatus(next);
       setAttendanceState(next === "GOING" ? "CONFIRMED" : null);
 
@@ -225,13 +208,11 @@ export default function EventRSVP({
           setStatus(prevStatus);
           setAttendanceState(prevState);
 
-          // rate limit
           if (res.status === 429) {
             toast.error(data?.message ?? "Too many requests. Try again shortly.");
             return;
           }
 
-          // conflict / inflight / capacity full
           if (res.status === 409) {
             const conflicts = Array.isArray(data?.conflicts) ? (data.conflicts as Conflict[]) : [];
             if (conflicts.length) {
@@ -254,12 +235,10 @@ export default function EventRSVP({
         setStatus(nextStatus);
         setAttendanceState(nextState);
 
-        // sync other tabs
         broadcastRsvpUpdate({ slug, status: nextStatus, attendanceState: nextState });
 
-        if (nextStatus === "GOING" && nextState === "WAITLISTED") {
-          toast.success("You’re on the waitlist ✅");
-        } else {
+        if (nextStatus === "GOING" && nextState === "WAITLISTED") toast.success("You’re on the waitlist ✅");
+        else {
           toast.success(
             nextStatus === "GOING"
               ? "RSVP set to Going ✅"
@@ -278,31 +257,29 @@ export default function EventRSVP({
     });
   }
 
-  const base =
-    "rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-100 transition hover:bg-white/10 disabled:opacity-60 disabled:hover:bg-white/5";
-  const active = "border-white/20 bg-white/10 ring-2 ring-white/10";
-
   const computedDisabled = !!disabled || pending;
 
+  const baseBtn =
+    "rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition hover:bg-zinc-50 disabled:opacity-60";
+  const activeBtn = "bg-amber-200 border-amber-300 text-black";
+
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-5">
+    <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <div className="text-sm font-semibold text-white">RSVP</div>
+          <div className="text-sm font-semibold text-zinc-900">RSVP</div>
           {status === "GOING" && attendanceState === "WAITLISTED" ? (
-            <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-200">
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-900">
               Waitlisted
             </span>
           ) : null}
         </div>
 
-        <div className="text-xs text-zinc-400">
-          {pending ? "Saving..." : `Current: ${label(status)}`}
-        </div>
+        <div className="text-xs text-zinc-700">{pending ? "Saving..." : `Current: ${label(status)}`}</div>
       </div>
 
       {disabledReason ? (
-        <div className="mb-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-300">
+        <div className="mb-3 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700">
           {disabledReason}
         </div>
       ) : null}
@@ -312,7 +289,7 @@ export default function EventRSVP({
           type="button"
           disabled={computedDisabled}
           onClick={() => update("GOING")}
-          className={`${base} ${status === "GOING" ? active : ""}`}
+          className={[baseBtn, status === "GOING" ? activeBtn : ""].join(" ")}
         >
           Going
         </button>
@@ -321,7 +298,7 @@ export default function EventRSVP({
           type="button"
           disabled={computedDisabled}
           onClick={() => update("MAYBE")}
-          className={`${base} ${status === "MAYBE" ? active : ""}`}
+          className={[baseBtn, status === "MAYBE" ? activeBtn : ""].join(" ")}
         >
           Maybe
         </button>
@@ -330,7 +307,7 @@ export default function EventRSVP({
           type="button"
           disabled={computedDisabled}
           onClick={() => update("DECLINED")}
-          className={`${base} ${status === "DECLINED" ? active : ""}`}
+          className={[baseBtn, status === "DECLINED" ? activeBtn : ""].join(" ")}
         >
           Decline
         </button>

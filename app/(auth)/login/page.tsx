@@ -1,4 +1,3 @@
-// app/(auth)/login/page.tsx
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { signIn } from "@/auth";
@@ -29,16 +28,23 @@ export default async function LoginPage({
       ? "Could not sign you in."
       : null;
 
+  const card =
+    "rounded-3xl border border-zinc-200 bg-white p-8 shadow-[0_20px_60px_rgba(0,0,0,0.08)]";
+  const input =
+    "w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-zinc-400 focus:ring-4 focus:ring-zinc-200/70";
+  const primaryBtn =
+    "w-full rounded-2xl bg-zinc-900 px-4 py-3 font-medium text-white transition hover:bg-zinc-800 focus:outline-none focus:ring-4 focus:ring-zinc-300";
+
   return (
     <main className="mx-auto max-w-md px-6 py-16">
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-8">
-        <h1 className="text-2xl font-semibold text-white">Log in</h1>
-        <p className="mt-2 text-sm text-zinc-400">
+      <div className={card}>
+        <h1 className="text-2xl font-semibold text-zinc-900">Log in</h1>
+        <p className="mt-2 text-sm text-zinc-600">
           Use your email and password to access your account.
         </p>
 
         {errorText ? (
-          <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {errorText}
           </div>
         ) : null}
@@ -62,16 +68,10 @@ export default async function LoginPage({
                 redirectTo: next,
               });
             } catch (err: any) {
-              // If NextAuth/Next triggers a redirect, don't swallow it
               if (err?.digest?.startsWith("NEXT_REDIRECT")) throw err;
 
-              // Pull custom code from our thrown CredentialsSignin error
-              const code =
-                err?.cause?.code || err?.code || err?.type || "CredentialsSignin";
-
-              redirect(
-                `/login?next=${encodeURIComponent(next)}&error=${encodeURIComponent(code)}`
-              );
+              const code = err?.cause?.code || err?.code || err?.type || "CredentialsSignin";
+              redirect(`/login?next=${encodeURIComponent(next)}&error=${encodeURIComponent(code)}`);
             }
           }}
         >
@@ -80,7 +80,7 @@ export default async function LoginPage({
             type="email"
             placeholder="Email"
             autoComplete="email"
-            className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+            className={input}
             required
           />
 
@@ -89,22 +89,25 @@ export default async function LoginPage({
             type="password"
             placeholder="Password"
             autoComplete="current-password"
-            className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+            className={input}
             required
           />
 
-          <button className="w-full rounded-xl bg-white px-4 py-3 font-medium text-black hover:opacity-90">
-            Log in
-          </button>
+          <button className={primaryBtn}>Log in</button>
         </form>
 
-        <Link href="/forgot-password" className="text-sm underline opacity-80 hover:opacity-100">
-          Forgot password?
-        </Link>
+        <div className="mt-4">
+          <Link
+            href="/forgot-password"
+            className="text-sm text-zinc-700 underline decoration-zinc-300 underline-offset-4 hover:text-zinc-900"
+          >
+            Forgot password?
+          </Link>
+        </div>
 
-        <p className="mt-4 text-sm text-zinc-400">
+        <p className="mt-4 text-sm text-zinc-600">
           Don&apos;t have an account?{" "}
-          <Link className="text-zinc-200 hover:underline" href="/signup">
+          <Link className="font-semibold text-zinc-900 hover:underline" href="/signup">
             Sign up
           </Link>
         </p>

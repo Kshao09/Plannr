@@ -1,8 +1,24 @@
-// app/(auth)/verify-email/page.tsx
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 
 type SP = { token?: string | string[] };
+
+function Card({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <main className="mx-auto max-w-md px-6 py-16">
+      <div className="rounded-3xl border border-zinc-200 bg-white p-8 shadow-[0_20px_60px_rgba(0,0,0,0.08)]">
+        <h1 className="text-2xl font-semibold text-zinc-900">{title}</h1>
+        {children}
+      </div>
+    </main>
+  );
+}
 
 export default async function VerifyEmailPage({
   searchParams,
@@ -14,17 +30,14 @@ export default async function VerifyEmailPage({
 
   if (!token) {
     return (
-      <main className="mx-auto max-w-md px-6 py-16">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-8">
-          <h1 className="text-2xl font-semibold text-white">Invalid link</h1>
-          <p className="mt-2 text-sm text-zinc-400">Missing verification token.</p>
-          <div className="mt-6">
-            <Link className="text-zinc-200 hover:underline" href="/login">
-              Go to log in
-            </Link>
-          </div>
+      <Card title="Invalid link">
+        <p className="mt-2 text-sm text-zinc-600">Missing verification token.</p>
+        <div className="mt-6">
+          <Link className="font-semibold text-zinc-900 hover:underline" href="/login">
+            Go to log in
+          </Link>
         </div>
-      </main>
+      </Card>
     );
   }
 
@@ -37,19 +50,16 @@ export default async function VerifyEmailPage({
 
   if (!record || record.expiresAt < now) {
     return (
-      <main className="mx-auto max-w-md px-6 py-16">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-8">
-          <h1 className="text-2xl font-semibold text-white">Link expired</h1>
-          <p className="mt-2 text-sm text-zinc-400">
-            This verification link is invalid or expired. Please sign up again.
-          </p>
-          <div className="mt-6">
-            <Link className="text-zinc-200 hover:underline" href="/signup">
-              Back to sign up
-            </Link>
-          </div>
+      <Card title="Link expired">
+        <p className="mt-2 text-sm text-zinc-600">
+          This verification link is invalid or expired. Please sign up again.
+        </p>
+        <div className="mt-6">
+          <Link className="font-semibold text-zinc-900 hover:underline" href="/signup">
+            Back to sign up
+          </Link>
         </div>
-      </main>
+      </Card>
     );
   }
 
@@ -62,18 +72,13 @@ export default async function VerifyEmailPage({
   ]);
 
   return (
-    <main className="mx-auto max-w-md px-6 py-16">
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-8">
-        <h1 className="text-2xl font-semibold text-white">Email verified ✅</h1>
-        <p className="mt-2 text-sm text-zinc-400">
-          Your email is verified. You can log in now.
-        </p>
-        <div className="mt-6">
-          <Link className="text-zinc-200 hover:underline" href="/login">
-            Go to log in
-          </Link>
-        </div>
+    <Card title="Email verified ✅">
+      <p className="mt-2 text-sm text-zinc-600">Your email is verified. You can log in now.</p>
+      <div className="mt-6">
+        <Link className="font-semibold text-zinc-900 hover:underline" href="/login">
+          Go to log in
+        </Link>
       </div>
-    </main>
+    </Card>
   );
 }

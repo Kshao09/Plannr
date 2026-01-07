@@ -19,8 +19,8 @@ function Chip({
       className={[
         "rounded-full border px-3 py-1.5 text-sm transition",
         active
-          ? "border-white/20 bg-white/15 text-white"
-          : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white",
+          ? "border-zinc-300 bg-zinc-100 text-zinc-900"
+          : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900",
       ].join(" ")}
     >
       {label}
@@ -31,9 +31,11 @@ function Chip({
 export default function EventsFilters({
   locations,
   categories,
+  showMine = false, // ✅ NEW
 }: {
   locations: string[];
   categories: string[];
+  showMine?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -41,18 +43,15 @@ export default function EventsFilters({
 
   const [localQ, setLocalQ] = useState(sp.get("q") ?? "");
 
-  const locSet = useMemo(
-    () => new Set((sp.get("loc") ?? "").split(",").filter(Boolean)),
-    [sp]
-  );
   const catSet = useMemo(
     () => new Set((sp.get("category") ?? "").split(",").filter(Boolean)),
     [sp]
   );
 
+  const mineActive = sp.get("mine") === "1";
+
   function pushParams(mutator: (params: URLSearchParams) => void) {
     const params = new URLSearchParams(sp.toString());
-    // any filter change => reset pagination
     params.set("page", "1");
     mutator(params);
     const qs = params.toString();
@@ -66,7 +65,7 @@ export default function EventsFilters({
     });
   }
 
-  function toggleMulti(key: "loc" | "category", value: string) {
+  function toggleMulti(key: "category", value: string) {
     pushParams((params) => {
       const current = new Set((params.get(key) ?? "").split(",").filter(Boolean));
       if (current.has(value)) current.delete(value);
@@ -86,7 +85,7 @@ export default function EventsFilters({
   return (
     <div className="mt-6">
       {/* Search */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+      <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
         <div className="flex items-center gap-2">
           <input
             value={localQ}
@@ -95,17 +94,16 @@ export default function EventsFilters({
               if (e.key === "Enter") applySearch(localQ);
             }}
             placeholder="Search events..."
-            className="min-w-0 flex-1 bg-transparent text-white/90 outline-none placeholder:text-white/40"
+            className="min-w-0 flex-1 bg-transparent text-zinc-900 outline-none placeholder:text-zinc-400"
           />
 
           <button
             onClick={() => applySearch(localQ)}
-            className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
+            className="shrink-0 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 hover:bg-zinc-50"
           >
             Search
           </button>
 
-          {/* Only show X when there is input */}
           {localQ.trim().length > 0 && (
             <button
               onClick={() => {
@@ -115,7 +113,7 @@ export default function EventsFilters({
                 });
               }}
               aria-label="Clear search"
-              className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/70 hover:bg-white/10 hover:text-white"
+              className="shrink-0 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50"
             >
               X
             </button>
@@ -125,12 +123,25 @@ export default function EventsFilters({
 
       {/* Chips */}
       <div className="mt-4">
-        {/* Category + Custom dates on ONE line */}
         <div className="flex flex-wrap items-center gap-4">
+          {/* ✅ By you */}
+          {showMine ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="mr-1 text-sm text-zinc-900">Organizer:</div>
+              <Chip
+                active={mineActive}
+                label="By you"
+                onClick={() => setParam("mine", mineActive ? null : "1")}
+              />
+            </div>
+          ) : null}
+
+          <div className="hidden h-6 w-px bg-zinc-200 md:block" />
+
           {/* Category chips */}
           {categories.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
-              <div className="mr-1 text-sm text-white/50">Category:</div>
+              <div className="mr-1 text-sm text-zinc-900">Category:</div>
               {categories.map((c) => (
                 <Chip
                   key={c}
@@ -142,12 +153,11 @@ export default function EventsFilters({
             </div>
           )}
 
-          {/* Divider (optional, only shows on md+) */}
-          <div className="hidden h-6 w-px bg-white/10 md:block" />
+          <div className="hidden h-6 w-px bg-zinc-200 md:block" />
 
           {/* Custom date range */}
           <div className="flex items-center gap-2 text-sm">
-            <span className="text-white/50">Custom dates:</span>
+            <span className="text-zinc-900">Custom dates:</span>
 
             <input
               type="date"
@@ -157,13 +167,13 @@ export default function EventsFilters({
                   const v = e.target.value;
                   if (!v) params.delete("from");
                   else params.set("from", v);
-                  params.delete("range"); // custom overrides range (safe even if you removed range chips)
+                  params.delete("range");
                 })
               }
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80"
+              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-zinc-900"
             />
 
-            <span className="text-white/40">to</span>
+            <span className="text-zinc-700">to</span>
 
             <input
               type="date"
@@ -176,7 +186,7 @@ export default function EventsFilters({
                   params.delete("range");
                 })
               }
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80"
+              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-zinc-900"
             />
           </div>
         </div>

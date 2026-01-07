@@ -29,7 +29,7 @@ type EditInitial = {
   endAt: string; // ISO
   locationName: string;
 
-  address: string; // street
+  address: string;
   city: string;
   state: string;
 
@@ -76,6 +76,11 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
 
   const [cover, setCover] = useState<string>(initial.image ?? "");
   const [images, setImages] = useState<string[]>(Array.isArray(initial.images) ? initial.images : []);
+
+  const inputClass =
+    "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-zinc-300 focus:ring-2 focus:ring-zinc-100";
+  const labelClass = "text-sm font-medium text-zinc-700";
+  const sectionClass = "rounded-2xl border border-zinc-200 bg-zinc-50 p-4";
 
   const payload = useMemo(() => {
     const cap = capacity.trim() ? Number(capacity) : null;
@@ -132,7 +137,6 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
     if (e <= s) return "End must be after Start.";
 
     if ((payload.images?.length ?? 0) > 5) return "Max 5 gallery images.";
-
     if (payload.isRecurring && !payload.recurrence) return "Choose a recurrence frequency.";
 
     return null;
@@ -172,11 +176,11 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
   return (
     <form
       onSubmit={onSubmit}
-      className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-[0_30px_80px_rgba(0,0,0,0.70)] backdrop-blur"
+      className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-[0_18px_60px_rgba(0,0,0,0.08)]"
     >
       <div className="grid gap-4">
         <input
-          className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+          className={inputClass}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Title"
@@ -184,29 +188,29 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
         />
 
         <textarea
-          className="min-h-[120px] w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+          className={`${inputClass} min-h-[120px]`}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Description"
         />
 
         <div className="grid gap-4 md:grid-cols-2">
-          <label className="text-sm text-zinc-300">
+          <label className={labelClass}>
             Start
             <input
               type="datetime-local"
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+              className={inputClass}
               value={startAt}
               onChange={(e) => setStartAt(e.target.value)}
               required
             />
           </label>
 
-          <label className="text-sm text-zinc-300">
+          <label className={labelClass}>
             End
             <input
               type="datetime-local"
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+              className={inputClass}
               value={endAt}
               onChange={(e) => setEndAt(e.target.value)}
               required
@@ -215,23 +219,19 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <label className="text-sm text-zinc-300">
+          <label className={labelClass}>
             Location name
             <input
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+              className={inputClass}
               value={locationName}
               onChange={(e) => setLocationName(e.target.value)}
               placeholder="e.g. FIU Library"
             />
           </label>
 
-          <label className="text-sm text-zinc-300">
+          <label className={labelClass}>
             Category
-            <select
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none focus:border-white/20"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-            >
+            <select className={inputClass} value={category} onChange={(e) => setCategory(e.target.value)}>
               <option value="">—</option>
               {EVENT_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
@@ -242,32 +242,26 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
           </label>
         </div>
 
-        {/* ✅ Address / City / State */}
         <div className="grid gap-4 md:grid-cols-3">
-          <label className="text-sm text-zinc-300 md:col-span-1">
+          <label className={`${labelClass} md:col-span-1`}>
             Address
             <input
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+              className={inputClass}
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               placeholder="Street address"
             />
           </label>
 
-          <label className="text-sm text-zinc-300">
+          <label className={labelClass}>
             City
-            <input
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              placeholder="Miami"
-            />
+            <input className={inputClass} value={city} onChange={(e) => setCity(e.target.value)} placeholder="Miami" />
           </label>
 
-          <label className="text-sm text-zinc-300">
+          <label className={labelClass}>
             State
             <input
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+              className={inputClass}
               value={stateCode}
               onChange={(e) => setStateCode(e.target.value.toUpperCase())}
               placeholder="FL"
@@ -276,11 +270,11 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
           </label>
         </div>
 
-        {/* ✅ Recurring */}
-        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-          <label className="flex items-center gap-3 text-sm text-zinc-200">
+        <div className={sectionClass}>
+          <label className="flex items-center gap-3 text-sm text-zinc-800">
             <input
               type="checkbox"
+              className="h-4 w-4 accent-zinc-900"
               checked={isRecurring}
               onChange={(e) => {
                 const on = e.target.checked;
@@ -293,10 +287,10 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
 
           {isRecurring ? (
             <div className="mt-3">
-              <label className="text-sm text-zinc-300">
+              <label className={labelClass}>
                 Repeats
                 <select
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none focus:border-white/20"
+                  className={inputClass}
                   value={recurrence}
                   onChange={(e) => setRecurrence(e.target.value as RecurrenceFrequency)}
                 >
@@ -310,10 +304,10 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <label className="text-sm text-zinc-300">
+          <label className={labelClass}>
             Capacity (blank = unlimited)
             <input
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+              className={inputClass}
               value={capacity}
               onChange={(e) => setCapacity(e.target.value)}
               inputMode="numeric"
@@ -321,9 +315,10 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
             />
           </label>
 
-          <label className="mt-6 flex items-center gap-3 text-sm text-zinc-200">
+          <label className="mt-6 flex items-center gap-3 text-sm text-zinc-800">
             <input
               type="checkbox"
+              className="h-4 w-4 accent-zinc-900"
               checked={waitlistEnabled}
               onChange={(e) => setWaitlistEnabled(e.target.checked)}
             />
@@ -331,6 +326,7 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
           </label>
         </div>
 
+        {/* If EventImagesField still looks dark, it needs similar class updates inside that component */}
         <EventImagesField
           cover={cover}
           images={images}
@@ -340,11 +336,11 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
           }}
         />
 
-        <div className="mt-2 flex gap-2">
+        <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="submit"
             disabled={saving}
-            className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-60"
+            className="rounded-xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
           >
             {saving ? "Saving…" : "Save changes"}
           </button>
@@ -352,7 +348,7 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
           <button
             type="button"
             onClick={() => router.back()}
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white hover:bg-white/10"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
           >
             Cancel
           </button>

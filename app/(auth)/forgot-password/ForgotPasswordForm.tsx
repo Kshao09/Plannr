@@ -1,4 +1,3 @@
-// app/forgot-password/ForgotPasswordForm.tsx
 "use client";
 
 import { useState } from "react";
@@ -23,9 +22,12 @@ export default function ForgotPasswordForm() {
     }
   }
 
+  const input =
+    "w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-zinc-400 focus:ring-4 focus:ring-zinc-200/70";
+
   if (done) {
     return (
-      <div className="rounded-2xl border border-white/10 p-4 text-sm">
+      <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700">
         If an account exists for <b>{email}</b>, a reset link has been sent.
       </div>
     );
@@ -34,14 +36,14 @@ export default function ForgotPasswordForm() {
   return (
     <form onSubmit={submit} className="space-y-3">
       <input
-        className="w-full rounded-xl border border-white/10 bg-transparent px-3 py-2"
+        className={input}
         placeholder="you@example.com"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         required
       />
       <button
-        className="w-full rounded-xl bg-white/10 px-3 py-2 hover:bg-white/15 disabled:opacity-50"
+        className="w-full rounded-2xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-zinc-300"
         disabled={loading}
       >
         {loading ? "Sending..." : "Send reset link"}

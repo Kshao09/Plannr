@@ -192,12 +192,12 @@ export default function LandingRecommended({ fallbackCity = "Miami" }: { fallbac
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Search city (e.g., Miami)"
-            className="w-full md:w-[260px] rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
+            className="w-full md:w-[260px] rounded-xl border border-black bg-white px-4 py-3 text-sm text-black placeholder:text-zinc-500 outline-none focus:ring-2 focus:ring-white/10"
           />
 
           <button
             onClick={() => setCity(input.trim() || fallbackCity)}
-            className="rounded-xl border border-white/15 bg-black/40 px-4 py-3 text-sm font-semibold text-white transition hover:bg-black/60 hover:border-white/25"
+            className="rounded-xl border border-black bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-black/25 hover:border-white/25"
             disabled={loading}
           >
             Search
@@ -205,7 +205,7 @@ export default function LandingRecommended({ fallbackCity = "Miami" }: { fallbac
 
           <button
             onClick={useMyLocation}
-            className="rounded-xl border border-white/15 bg-black/40 px-4 py-3 text-sm font-semibold text-white transition hover:bg-black/60 hover:border-white/25"
+            className="rounded-xl border border-black bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-black/25 hover:border-white/25"
             disabled={loading}
           >
             {loading ? "Detecting..." : "Use my location"}
@@ -251,7 +251,7 @@ export default function LandingRecommended({ fallbackCity = "Miami" }: { fallbac
                   </div>
                 )}
 
-                <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-3 py-1 text-xs text-zinc-100">
+                <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black px-3 py-1 text-xs text-white">
                   Open <span aria-hidden>→</span>
                 </div>
               </div>

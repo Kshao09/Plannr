@@ -45,36 +45,36 @@ export default async function EventAttendees({ eventId, slug, canManage }: Props
     <section className="rounded-2xl border border-white/10 bg-white/[0.05] p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-white">Attendees</div>
-          <div className="mt-1 text-xs text-zinc-400">
-            Going <span className="text-zinc-200">{counts.GOING}</span> • Maybe{" "}
-            <span className="text-zinc-200">{counts.MAYBE}</span> • Declined{" "}
-            <span className="text-zinc-200">{counts.DECLINED}</span>
+          <div className="text-sm font-semibold text-black">Attendees</div>
+          <div className="mt-1 text-xs text-black">
+            Going <span className="text-black">{counts.GOING}</span> • Maybe{" "}
+            <span className="text-black">{counts.MAYBE}</span> • Declined{" "}
+            <span className="text-black">{counts.DECLINED}</span>
           </div>
         </div>
 
         <Link
           href={`/api/events/${slug}/attendees.csv`}
-          className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/10"
+          className="inline-flex items-center justify-center rounded-xl border border-black bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/10"
         >
           Download CSV
         </Link>
       </div>
 
       {rsvps.length === 0 ? (
-        <div className="mt-4 text-sm text-zinc-400">No RSVPs yet.</div>
+        <div className="mt-4 text-sm text-black">No RSVPs yet.</div>
       ) : (
         <ul className="mt-4 space-y-2">
           {rsvps.map((r, i) => (
             <li
               key={`${r.user.id}-${r.createdAt.toISOString()}-${i}`}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-4 py-3"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-300 bg-black/20 px-4 py-3"
             >
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-zinc-100">
+                <div className="truncate text-sm font-semibold text-black">
                   {r.user.name || "Unnamed user"}
                 </div>
-                <div className="truncate text-xs text-zinc-400">
+                <div className="truncate text-xs text-black">
                   {r.user.email ? (
                     <a className="hover:underline" href={`mailto:${r.user.email}`}>
                       {r.user.email}
@@ -86,10 +86,10 @@ export default async function EventAttendees({ eventId, slug, canManage }: Props
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-200">
+                <span className="rounded-lg border border-black bg-white/5 px-2 py-1 text-xs text-black">
                   {r.status}
                 </span>
-                <span className="text-xs text-zinc-500">
+                <span className="text-xs text-black">
                   {new Date(r.createdAt).toLocaleString()}
                 </span>
               </div>

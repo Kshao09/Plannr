@@ -9,14 +9,25 @@ html, body {
   scroll-behavior: smooth;
 }
 
-body {
-  overflow-x: hidden;
-  overflow-y: auto; /* body is the only vertical scroller */
+:root {
+  color-scheme: light;
 }
 
-:root { color-scheme: dark; }
-body { margin: 0; font-family: ui-sans-serif, system-ui, Arial; }
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, Arial;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: #ffffff;
+  color: #0a0a0a;
+}
+
 a { color: inherit; text-decoration: none; }
+
+/* Helps date inputs render light */
+input, textarea, select {
+  color-scheme: light;
+}
 
 .container {
   max-width: 1000px;
@@ -25,51 +36,39 @@ a { color: inherit; text-decoration: none; }
 }
 
 .nav { display: flex; gap: 12px; align-items: center; }
-.card { border: 1px solid #333; border-radius: 12px; padding: 12px; margin: 12px 0; }
-.small { color: #aaa; font-size: 14px; }
+
+.card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px;
+  margin: 12px 0;
+  background: #fff;
+}
+
+.small { color: #6b7280; font-size: 14px; }
 
 .card input, .card textarea, .card button {
   width: 100%;
   padding: 10px;
   margin: 6px 0 14px 0;
   border-radius: 10px;
-  border: 1px solid #333;
-  background: #111;
-  color: #fff;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #111827;
 }
 
-button {
-  cursor: pointer;
-}
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.card input:focus, .card textarea:focus {
+  outline: none;
+  border-color: #9ca3af;
+  box-shadow: 0 0 0 4px rgba(156, 163, 175, 0.25);
 }
 
-.iconBtn svg {
-  width: 18px;
-  height: 18px;
-}
+button { cursor: pointer; }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.iconBtnDanger {
-  background-color: rgb(230, 14, 14);
-}
+/* icon buttons (light) */
+.iconBtn svg { width: 18px; height: 18px; }
 
-.eventHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.eventActions {
-  display: flex;
-  gap: 10px;
-  align-items: center; /* ensures perfect vertical alignment */
-  justify-content: flex-end;
-}
-
-/* shared style for <a>, <Link>, <button> */
 .iconBtn {
   appearance: none;
   -webkit-appearance: none;
@@ -85,14 +84,14 @@ button:disabled {
   margin: 0;
 
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(0, 0, 0, 0.02);
 
   color: inherit;
   text-decoration: none;
 
-  line-height: 0;          /* fixes baseline differences */
-  vertical-align: middle;  /* fixes <a> baseline differences */
+  line-height: 0;
+  vertical-align: middle;
 
   cursor: pointer;
 
@@ -100,8 +99,8 @@ button:disabled {
 }
 
 .iconBtn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.18);
   transform: translateY(-1px);
 }
 
@@ -114,19 +113,20 @@ button:disabled {
 .iconBtn svg {
   width: 18px;
   height: 18px;
-  display: block; /* removes svg baseline whitespace */
+  display: block;
 }
 
+.iconBtnDanger { background-color: rgb(230, 14, 14); }
 .iconBtnDanger:hover {
   border-color: rgba(255, 80, 80, 0.45);
-  background: rgba(255, 80, 80, 0.08);
+  background: rgba(255, 80, 80, 0.10);
 }
 
-/* --- modal --- */
+/* modal (light) */
 .modalOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
@@ -138,31 +138,22 @@ button:disabled {
 .modal {
   width: min(520px, 100%);
   border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(20, 20, 20, 0.92);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.18);
   padding: 18px;
 }
 
-.modalTitle {
-  font-size: 18px;
-  font-weight: 700;
-  margin-bottom: 6px;
-}
-
-.modalDesc {
-  opacity: 0.8;
-  margin-bottom: 12px;
-  font-size: 14px;
-}
+.modalTitle { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+.modalDesc { opacity: 0.85; margin-bottom: 12px; font-size: 14px; color: #4b5563; }
 
 .modalError {
   margin: 10px 0 0;
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid rgba(255, 80, 80, 0.35);
-  background: rgba(255, 80, 80, 0.08);
-  color: rgba(255, 210, 210, 0.95);
+  background: rgba(255, 80, 80, 0.10);
+  color: #7f1d1d;
   font-size: 13px;
 }
 
@@ -177,40 +168,33 @@ button:disabled {
   height: 40px;
   padding: 0 14px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(0, 0, 0, 0.03);
   color: inherit;
   cursor: pointer;
   transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
 }
 
 .btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.18);
   transform: translateY(-1px);
 }
 
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.btnGhost {
-  background: transparent;
-}
+.btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+.btnGhost { background: transparent; }
 
 .btnDanger {
   border-color: rgba(255, 80, 80, 0.35);
-  background: rgba(255, 80, 80, 0.08);
+  background: rgba(255, 80, 80, 0.10);
 }
 
 .btnDanger:hover {
   border-color: rgba(255, 80, 80, 0.55);
-  background: rgba(255, 80, 80, 0.12);
+  background: rgba(255, 80, 80, 0.14);
 }
 
-/* ---- toasts ---- */
+/* toasts (light) */
 .toastRegion {
   position: fixed;
   top: 18px;
@@ -229,51 +213,28 @@ button:disabled {
   gap: 12px;
   padding: 12px 12px 12px 14px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(18, 18, 18, 0.92);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(8px);
-  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.14);
 }
 
-.toastBody {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.toastTitle {
-  font-weight: 700;
-  font-size: 13px;
-}
-
-.toastMsg {
-  opacity: 0.85;
-  font-size: 13px;
-  line-height: 1.25rem;
-}
+.toastBody { display: flex; flex-direction: column; gap: 2px; }
+.toastTitle { font-weight: 700; font-size: 13px; }
+.toastMsg { opacity: 0.85; font-size: 13px; line-height: 1.25rem; color: #374151; }
 
 .toastClose {
   height: 28px;
   width: 28px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(0, 0, 0, 0.03);
   color: inherit;
   cursor: pointer;
 }
 
-.toastClose:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
+.toastClose:hover { background: rgba(0, 0, 0, 0.06); }
 
-.toast_success {
-  border-color: rgba(80, 255, 140, 0.25);
-}
-
-.toast_error {
-  border-color: rgba(255, 80, 80, 0.35);
-}
-
-.toast_info {
-  border-color: rgba(120, 170, 255, 0.28);
-}
+.toast_success { border-color: rgba(16, 185, 129, 0.35); }
+.toast_error { border-color: rgba(239, 68, 68, 0.35); }
+.toast_info { border-color: rgba(59, 130, 246, 0.30); }

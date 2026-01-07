@@ -48,9 +48,9 @@ export default function StaffCheckInClient({
   }
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+    <div className="rounded-2xl border border-black bg-white/5 p-6">
       {!secretOk ? (
-        <div className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+        <div className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-zinc-700">
           This check-in link is missing a valid secret. Ask the organizer for a fresh staff link.
         </div>
       ) : null}
@@ -59,7 +59,7 @@ export default function StaffCheckInClient({
         value={code}
         onChange={(e) => setCode(e.target.value)}
         placeholder="Attendee code"
-        className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+        className="w-full rounded-xl border border-black bg-black/30 px-4 py-3 text-black outline-none focus:border-black/20"
       />
       <button
         type="button"

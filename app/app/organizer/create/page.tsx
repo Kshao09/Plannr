@@ -14,7 +14,7 @@ export default async function OrganizerCreatePage() {
     <div className="mx-auto max-w-4xl px-4 py-10">
       <div className="mb-6">
         <div className="text-2xl font-semibold text-white">Create event</div>
-        <div className="mt-1 text-sm text-zinc-400">Add details, upload images, and publish.</div>
+        <div className="mt-1 text-sm text-black">Add details, upload images, and publish.</div>
       </div>
       <CreateEventForm />
     </div>

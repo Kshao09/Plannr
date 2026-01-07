@@ -26,8 +26,8 @@ export default async function StaffCheckInPage({
 
   return (
     <main className="mx-auto max-w-xl px-6 py-10">
-      <h1 className="text-2xl font-semibold text-white">Staff check-in</h1>
-      <p className="mt-2 text-sm text-zinc-400">{event.title}</p>
+      <h1 className="text-2xl font-semibold text-black">Staff check-in</h1>
+      <p className="mt-2 text-sm text-zinc-800">{event.title}</p>
 
       <div className="mt-6">
         <StaffCheckInClient slug={slug} secret={s} expectedSecret={event.checkInSecret} />

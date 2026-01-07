@@ -1,4 +1,3 @@
-// lib/events.ts
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 
@@ -10,13 +9,15 @@ export type EventsQuery = {
   q?: string;
 
   range?: RangeKey;
-  from?: string; // YYYY-MM-DD (custom)
-  to?: string; // YYYY-MM-DD (custom)
+  from?: string;
+  to?: string;
 
-  // Accept either arrays (filters UI) or single strings (home search)
-  loc?: string[] | string;      // filters Event.locationName
-  city?: string[] | string;     // alias of loc
-  category?: string[] | string; // filters Event.category
+  loc?: string[] | string;
+  city?: string[] | string;
+  category?: string[] | string;
+
+  // ✅ NEW: filter by organizerId (used by "By you")
+  organizerId?: string;
 };
 
 function startOfDay(d: Date) {
@@ -98,7 +99,6 @@ export async function getEvents(query: EventsQuery) {
     if (to) where.startAt.lte = to;
   }
 
-  // city is an alias of loc (home search uses "city")
   const locValues = toArray(query.loc).concat(toArray(query.city));
   if (locValues.length) {
     where.locationName = { in: Array.from(new Set(locValues)) };
@@ -107,6 +107,11 @@ export async function getEvents(query: EventsQuery) {
   const catValues = toArray(query.category);
   if (catValues.length) {
     where.category = { in: Array.from(new Set(catValues)) };
+  }
+
+  // ✅ NEW: organizer filter
+  if (query.organizerId) {
+    where.organizerId = query.organizerId;
   }
 
   const [total, items] = await Promise.all([
@@ -126,7 +131,7 @@ export async function getEvents(query: EventsQuery) {
         address: true,
         category: true,
         image: true,
-        organizer: { select: { name: true } }, // ✅
+        organizer: { select: { name: true } },
       },
     }),
   ]);

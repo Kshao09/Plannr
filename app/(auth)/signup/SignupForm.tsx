@@ -1,4 +1,3 @@
-// app/(auth)/signup/SignupForm.tsx
 "use client";
 
 import { useEffect, useRef, useState, useActionState } from "react";
@@ -6,19 +5,21 @@ import { useFormStatus } from "react-dom";
 import { signupAction } from "./actions";
 
 type FormState = { error?: string | null };
-
 const initialState: FormState = { error: null };
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+const input =
+  "w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-zinc-400 focus:ring-4 focus:ring-zinc-200/70";
+
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
     <button
       disabled={pending}
-      className="w-full rounded-xl bg-white px-4 py-3 font-medium text-black hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+      className="w-full rounded-2xl bg-zinc-900 px-4 py-3 font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-4 focus:ring-zinc-300"
     >
       {pending ? "Creating account..." : "Create account"}
     </button>
@@ -26,9 +27,7 @@ function SubmitButton() {
 }
 
 export default function SignupForm() {
-  // ✅ React 19 / Next newer versions: useActionState (not useFormState)
   const [state, formAction] = useActionState(signupAction, initialState);
-
   const formRef = useRef<HTMLFormElement>(null);
 
   const [clientError, setClientError] = useState<string | null>(null);
@@ -60,7 +59,7 @@ export default function SignupForm() {
   return (
     <>
       {shownError ? (
-        <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+        <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {shownError}
         </div>
       ) : null}
@@ -80,25 +79,15 @@ export default function SignupForm() {
           }
         }}
       >
-        <input
-          name="name"
-          placeholder="Name (optional)"
-          className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
-        />
+        <input name="name" placeholder="Name (optional)" className={input} />
 
-        <input
-          name="email"
-          type="email"
-          placeholder="Email"
-          className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
-          required
-        />
+        <input name="email" type="email" placeholder="Email" className={input} required />
 
         <input
           name="password"
           type="password"
           placeholder="Password (min 8 chars)"
-          className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+          className={input}
           required
         />
 
@@ -106,13 +95,13 @@ export default function SignupForm() {
           name="password2"
           type="password"
           placeholder="Retype password"
-          className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+          className={input}
           required
         />
 
-        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-          <p className="text-sm font-medium text-zinc-200">Account type</p>
-          <div className="mt-2 flex gap-4 text-sm text-zinc-200">
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+          <p className="text-sm font-medium text-zinc-900">Account type</p>
+          <div className="mt-2 flex gap-6 text-sm text-zinc-700">
             <label className="flex items-center gap-2">
               <input type="radio" name="role" value="MEMBER" defaultChecked />
               Member

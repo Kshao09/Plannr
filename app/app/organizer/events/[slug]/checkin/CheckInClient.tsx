@@ -60,34 +60,34 @@ export default function CheckInClient({
 
   return (
     <div className="w-full">
-      <div className="mx-auto w-full max-w-[1200px] rounded-2xl border border-white/10 bg-white/5 p-6">
-        <div className="flex flex-wrap items-center gap-4 text-sm text-zinc-300">
+      <div className="mx-auto w-full max-w-[1200px] rounded-2xl border border-zinc-800 bg-white/5 p-6">
+        <div className="flex flex-wrap items-center gap-4 text-sm text-black">
           <div>
-            Confirmed: <b className="text-white">{confirmed.length}</b>
+            Confirmed: <b className="text-black">{confirmed.length}</b>
             {event.capacity != null ? (
               <>
                 {" "}
-                / Capacity: <b className="text-white">{event.capacity}</b>
+                / Capacity: <b className="text-black">{event.capacity}</b>
               </>
             ) : null}
           </div>
           {event.waitlistEnabled ? (
             <div>
-              Waitlist: <b className="text-white">{waitlisted.length}</b>
+              Waitlist: <b className="text-black">{waitlisted.length}</b>
             </div>
           ) : null}
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <div>
-            <div className="text-sm font-semibold text-white">Event page (share)</div>
+            <div className="text-sm font-semibold text-black">Event page (share)</div>
             <div className="mt-2">
               <QrImage text={resolvedShare} />
             </div>
           </div>
 
           <div>
-            <div className="text-sm font-semibold text-white">Staff check-in link</div>
+            <div className="text-sm font-semibold text-black">Staff check-in link</div>
             <div className="mt-2">
               <QrImage text={resolvedStaff} />
             </div>
@@ -99,7 +99,7 @@ export default function CheckInClient({
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder="Scan attendee QR → paste code here"
-            className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+            className="w-full rounded-xl border border-zinc-700 bg-white px-4 py-3 text-black outline-none"
           />
           <button
             type="button"
@@ -112,22 +112,22 @@ export default function CheckInClient({
         </div>
 
         <div className="mt-6">
-          <h3 className="text-sm font-semibold text-white">Confirmed attendees</h3>
-          <div className="mt-3 divide-y divide-white/10 rounded-xl border border-white/10">
+          <h3 className="text-sm font-semibold text-black">Confirmed attendees</h3>
+          <div className="mt-3 divide-y divide-white/10 rounded-xl border border-zinc-700">
             {confirmed.map((r: any) => (
               <div key={r.id} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div>
-                  <div className="text-sm text-white">{r.user?.name ?? r.user?.email}</div>
-                  <div className="text-xs text-zinc-400">{r.user?.email}</div>
-                  <div className="mt-1 text-xs text-zinc-500">Code: {r.checkInCode}</div>
+                  <div className="text-sm text-black">{r.user?.name ?? r.user?.email}</div>
+                  <div className="text-xs text-zinc-600">{r.user?.email}</div>
+                  <div className="mt-1 text-xs text-zinc-700">Code: {r.checkInCode}</div>
                 </div>
                 <div className="text-xs">
                   {r.checkedInAt ? (
-                    <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-emerald-200">
+                    <span className="rounded-full border border-emerald-700/20 bg-emerald-500/10 px-3 py-1 text-emerald-800">
                       Checked in
                     </span>
                   ) : (
-                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-zinc-300">
+                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-zinc-700">
                       Not yet
                     </span>
                   )}
@@ -139,12 +139,12 @@ export default function CheckInClient({
 
         {event.waitlistEnabled ? (
           <div className="mt-6">
-            <h3 className="text-sm font-semibold text-white">Waitlist</h3>
-            <div className="mt-3 divide-y divide-white/10 rounded-xl border border-white/10">
+            <h3 className="text-sm font-semibold text-black">Waitlist</h3>
+            <div className="mt-3 divide-y divide-white/10 rounded-xl border border-zinc-700">
               {waitlisted.map((r: any) => (
                 <div key={r.id} className="px-4 py-3">
-                  <div className="text-sm text-white">{r.user?.name ?? r.user?.email}</div>
-                  <div className="text-xs text-zinc-400">{r.user?.email}</div>
+                  <div className="text-sm text-black">{r.user?.name ?? r.user?.email}</div>
+                  <div className="text-xs text-zinc-600">{r.user?.email}</div>
                 </div>
               ))}
             </div>

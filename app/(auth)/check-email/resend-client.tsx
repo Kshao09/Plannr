@@ -1,10 +1,8 @@
-// app/(auth)/check-email/resend-client.tsx
 "use client";
 
 import { useState } from "react";
 
 function newIdempotencyKey() {
-  // browsers only
   const c = globalThis.crypto as Crypto | undefined;
   if (c?.randomUUID) return c.randomUUID();
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -36,7 +34,6 @@ export default function ResendVerificationClient({ email }: { email: string }) {
         return;
       }
 
-      // route always returns ok-ish to avoid enumeration
       setMsg("If an account exists and isn’t verified yet, a new email will be sent.");
     } catch {
       setMsg("Network error. Try again.");
@@ -50,13 +47,13 @@ export default function ResendVerificationClient({ email }: { email: string }) {
       <button
         type="button"
         onClick={resend}
-        className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-60"
+        className="w-full rounded-2xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-60 focus:outline-none focus:ring-4 focus:ring-zinc-300"
         disabled={!email || loading}
       >
         {loading ? "Sending..." : "Resend verification email"}
       </button>
 
-      {msg ? <div className="text-sm text-zinc-200">{msg}</div> : null}
+      {msg ? <div className="text-sm text-zinc-700">{msg}</div> : null}
     </div>
   );
 }

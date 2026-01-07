@@ -111,14 +111,14 @@ export default async function OrganizerCheckInPage({
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Organizer check-in</h1>
-          <p className="mt-1 text-sm text-zinc-300">
+          <p className="mt-1 text-sm text-black">
             Manage check-ins for <span className="font-semibold">{safeEvent.title}</span>
           </p>
         </div>
 
         <Link
           href={`/organizer/events/${safeEvent.slug}/edit`}
-          className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/10"
+          className="rounded-xl border border-zinc-700 bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/10"
         >
           Edit event
         </Link>
