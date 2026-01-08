@@ -117,7 +117,7 @@ export default async function OrganizerCheckInPage({
         </div>
 
         <Link
-          href={`/organizer/events/${safeEvent.slug}/edit`}
+          href={`/app/organizer/events/${safeEvent.slug}/edit`}
           className="rounded-xl border border-zinc-700 bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/10"
         >
           Edit event
