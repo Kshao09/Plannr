@@ -31,11 +31,11 @@ function Chip({
 export default function EventsFilters({
   locations,
   categories,
-  showMine = false, // ✅ NEW
+  tiers,
 }: {
   locations: string[];
   categories: string[];
-  showMine?: boolean;
+  tiers: string[]; // ["FREE","PREMIUM"]
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -48,10 +48,14 @@ export default function EventsFilters({
     [sp]
   );
 
-  const mineActive = sp.get("mine") === "1";
+  const tierActive = (sp.get("tier") ?? "").toUpperCase(); // FREE | PREMIUM | ""
 
   function pushParams(mutator: (params: URLSearchParams) => void) {
     const params = new URLSearchParams(sp.toString());
+
+    // ✅ remove legacy mine param if it exists (no longer used)
+    params.delete("mine");
+
     params.set("page", "1");
     mutator(params);
     const qs = params.toString();
@@ -108,9 +112,7 @@ export default function EventsFilters({
             <button
               onClick={() => {
                 setLocalQ("");
-                pushParams((params) => {
-                  params.delete("q");
-                });
+                pushParams((params) => params.delete("q"));
               }}
               aria-label="Clear search"
               className="shrink-0 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50"
@@ -124,14 +126,19 @@ export default function EventsFilters({
       {/* Chips */}
       <div className="mt-4">
         <div className="flex flex-wrap items-center gap-4">
-          {/* ✅ By you */}
-          {showMine ? (
+          {/* ✅ Pricing tier chips */}
+          {tiers?.length ? (
             <div className="flex flex-wrap items-center gap-2">
-              <div className="mr-1 text-sm text-zinc-900">Organizer:</div>
+              <div className="mr-1 text-sm text-zinc-900">Pricing:</div>
               <Chip
-                active={mineActive}
-                label="By you"
-                onClick={() => setParam("mine", mineActive ? null : "1")}
+                active={tierActive === "FREE"}
+                label="Free"
+                onClick={() => setParam("tier", tierActive === "FREE" ? null : "FREE")}
+              />
+              <Chip
+                active={tierActive === "PREMIUM"}
+                label="Premium"
+                onClick={() => setParam("tier", tierActive === "PREMIUM" ? null : "PREMIUM")}
               />
             </div>
           ) : null}

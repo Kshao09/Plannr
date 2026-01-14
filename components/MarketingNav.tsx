@@ -1,12 +1,20 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { headers } from "next/headers";
+import { unstable_noStore as noStore } from "next/cache";
 import SignOutButton from "@/components/SignOutButton";
 
+export const dynamic = "force-dynamic";
+
 export default async function MarketingNav() {
+  noStore();
+
+  // If middleware injects x-pathname, we can use it to hide nav on /app
   const h = await headers();
-  const pathname = h.get("x-pathname");
-  if (pathname === "/app/dashboard") return null;
+  const pathname = h.get("x-pathname") ?? "";
+
+  // ✅ Prevent duplicates if MarketingNav is present in global shells/layouts
+  if (pathname.startsWith("/app")) return null;
 
   const session = await auth();
   const isLoggedIn = !!session?.user;
@@ -36,7 +44,7 @@ export default async function MarketingNav() {
               {isOrganizer ? (
                 <Link
                   href="/app/organizer/create"
-                  className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-800"
+                  className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-800"
                 >
                   Create
                 </Link>
@@ -52,14 +60,12 @@ export default async function MarketingNav() {
               <SignOutButton className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition hover:bg-zinc-50 hover:border-zinc-300 disabled:opacity-60" />
             </>
           ) : (
-            <>
-              <Link
-                href="/login"
-                className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition hover:bg-blue hover:border-zinc-300"
-              >
-                Get Started
-              </Link>
-            </>
+            <Link
+              href="/login"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition hover:bg-zinc-50 hover:border-zinc-300"
+            >
+              Get Started
+            </Link>
           )}
         </div>
       </div>

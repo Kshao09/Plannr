@@ -65,6 +65,11 @@ function buildImagesToShow(event: { image: string | null; images: unknown }) {
   return out;
 }
 
+function tierLabel(raw: any) {
+  const t = String(raw ?? "FREE").toUpperCase();
+  return t === "PREMIUM" ? "Premium" : "Free";
+}
+
 export default async function EventDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   noStore();
 
@@ -98,14 +103,17 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
       endAt: true,
       locationName: true,
       address: true,
+      city: true,
+      state: true,
       organizerId: true,
       organizer: { select: { name: true } },
       image: true,
       images: true,
       capacity: true,
       waitlistEnabled: true,
+      ticketTier: true, // ✅ NEW
       checkInSecret: true,
-    },
+    } as any,
   });
 
   if (!event) notFound();
@@ -124,9 +132,9 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
     };
   }
 
+  const addressLine = [event.address, event.city, event.state].map((x) => (x ?? "").trim()).filter(Boolean).join(", ");
   const locationForCalendar =
-    (event.locationName?.trim() ? event.locationName : null) ??
-    (event.address?.trim() ? event.address : null);
+    (event.locationName?.trim() ? event.locationName : null) ?? (addressLine ? addressLine : null);
 
   const gcalUrl = buildGoogleCalendarUrl({
     title: event.title,
@@ -149,6 +157,11 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
 
   const pill =
     "inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-sm font-medium text-zinc-900 shadow-sm";
+
+  const tierPill =
+    tierLabel((event as any).ticketTier) === "Premium"
+      ? "inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-900 shadow-sm"
+      : "inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-900 shadow-sm";
 
   const card =
     "rounded-3xl border border-zinc-200 bg-white p-5 shadow-[0_18px_60px_rgba(0,0,0,0.06)]";
@@ -177,6 +190,8 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
 
             <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
               {event.locationName ? <span className={pill}>{event.locationName}</span> : null}
+
+              <span className={tierPill}>{tierLabel((event as any).ticketTier)}</span>
 
               {event.organizer?.name ? (
                 <span className="text-zinc-700">
@@ -229,7 +244,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
                 <div className={subtleCard}>
                   <div className="text-sm font-semibold text-zinc-900">Where</div>
                   <div className="mt-2 text-sm text-zinc-800">{event.locationName ? event.locationName : "—"}</div>
-                  {event.address ? <div className="mt-1 text-sm text-zinc-700">{event.address}</div> : null}
+                  {addressLine ? <div className="mt-1 text-sm text-zinc-700">{addressLine}</div> : null}
                 </div>
               </div>
             </div>
@@ -271,7 +286,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
               <div className="rounded-3xl border border-zinc-200 bg-white p-3">
                 <QrImage
                   text={shareUrl}
-                  openHref={`/app/organizer/events/${event.slug}/checkin`}
+                  openHref={shareUrl} // ✅ FIXED: was pointing to organizer checkin route
                   openLabel="Open event ↗"
                   openDisabled={false}
                   showText={false}

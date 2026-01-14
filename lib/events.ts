@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 
 export type RangeKey = "all" | "today" | "week" | "month" | "upcoming";
+export type TicketTier = "FREE" | "PREMIUM";
 
 export type EventsQuery = {
   page: number;
@@ -16,7 +17,8 @@ export type EventsQuery = {
   city?: string[] | string;
   category?: string[] | string;
 
-  // ✅ NEW: filter by organizerId (used by "By you")
+  tier?: string[] | string; // ✅ NEW
+
   organizerId?: string;
 };
 
@@ -109,7 +111,12 @@ export async function getEvents(query: EventsQuery) {
     where.category = { in: Array.from(new Set(catValues)) };
   }
 
-  // ✅ NEW: organizer filter
+  // ✅ NEW: tier filter
+  const tiers = toArray(query.tier).map((x) => String(x).toUpperCase());
+  if (tiers.length) {
+    where.ticketTier = { in: Array.from(new Set(tiers)) };
+  }
+
   if (query.organizerId) {
     where.organizerId = query.organizerId;
   }
@@ -130,14 +137,14 @@ export async function getEvents(query: EventsQuery) {
         locationName: true,
         address: true,
         category: true,
+        ticketTier: true, // ✅ NEW
         image: true,
         organizer: { select: { name: true } },
-      },
+      } as any,
     }),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-
   return { items, total, page, pageSize, totalPages };
 }
 
@@ -168,5 +175,7 @@ export async function getEventFilterOptions() {
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b));
 
-  return { locations, categories };
+  const tiers: TicketTier[] = ["FREE", "PREMIUM"]; // ✅ static is fine
+
+  return { locations, categories, tiers };
 }

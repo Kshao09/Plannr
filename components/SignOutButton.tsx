@@ -1,7 +1,6 @@
 "use client";
 
 import { signOut } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export default function SignOutButton({
@@ -13,7 +12,6 @@ export default function SignOutButton({
   redirectTo?: string;
   children?: React.ReactNode;
 }) {
-  const router = useRouter();
   const [pending, setPending] = useState(false);
 
   return (
@@ -25,14 +23,11 @@ export default function SignOutButton({
         if (pending) return;
         setPending(true);
         try {
-          // extra nudge for tabs (optional, but helps)
+          // Broadcast helper (optional)
           localStorage.setItem("plannr:auth", String(Date.now()));
 
-          // NextAuth client signOut broadcasts to other tabs
-          await signOut({ redirect: false });
-
-          router.replace(redirectTo);
-          router.refresh();
+          // ✅ Use a real navigation so server nav updates instantly
+          await signOut({ callbackUrl: redirectTo });
         } finally {
           setPending(false);
         }

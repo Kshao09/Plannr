@@ -5,6 +5,30 @@ import EventEditForm from "./EventEditForm";
 
 export const dynamic = "force-dynamic";
 
+type TicketTier = "FREE" | "PREMIUM";
+
+async function resolveMe(session: any): Promise<{ id: string; role: string } | null> {
+  const su = session?.user ?? {};
+  const sessionId = (su as any)?.id as string | undefined;
+  const sessionRole = (su as any)?.role as string | undefined;
+  const sessionEmail = su?.email as string | undefined;
+
+  // If your auth session already has both, trust it.
+  if (sessionId && sessionRole) return { id: sessionId, role: sessionRole };
+
+  // Otherwise, resolve via email (most reliable)
+  if (sessionEmail) {
+    const me = await prisma.user.findUnique({
+      where: { email: sessionEmail },
+      select: { id: true, role: true },
+    });
+    if (!me?.id || !me.role) return null;
+    return { id: me.id, role: me.role as any };
+  }
+
+  return null;
+}
+
 export default async function EditEventPage({
   params,
 }: {
@@ -15,11 +39,7 @@ export default async function EditEventPage({
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const me = await prisma.user.findUnique({
-    where: { email: session.user.email ?? "" },
-    select: { id: true, role: true },
-  });
-
+  const me = await resolveMe(session);
   if (!me?.id || me.role !== "ORGANIZER") redirect("/public/events");
 
   const event = await prisma.event.findFirst({
@@ -39,6 +59,7 @@ export default async function EditEventPage({
       state: true,
 
       category: true,
+      ticketTier: true, // ✅ NEW
       capacity: true,
       waitlistEnabled: true,
 
@@ -49,18 +70,25 @@ export default async function EditEventPage({
       images: true,
 
       checkInSecret: true,
-    },
+    } as any,
   });
 
   if (!event) return notFound();
   if (event.organizerId !== me.id) redirect("/public/events");
 
+  const safeImages = Array.isArray(event.images)
+    ? (event.images as any[]).map((x) => String(x ?? "").trim()).filter(Boolean)
+    : [];
+
+  const ticketTier: TicketTier =
+    ((event as any).ticketTier ?? "FREE") === "PREMIUM" ? "PREMIUM" : "FREE";
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-10">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <div className="text-2xl font-semibold text-white">Edit event</div>
-          <div className="mt-1 text-sm text-zinc-400">
+          <div className="text-2xl font-semibold text-zinc-900">Edit event</div>
+          <div className="mt-1 text-sm text-zinc-600">
             Update details, manage images, and save changes.
           </div>
         </div>
@@ -80,6 +108,8 @@ export default async function EditEventPage({
           state: event.state ?? "",
 
           category: event.category ?? "",
+          ticketTier, // ✅ NEW
+
           capacity: event.capacity ?? null,
           waitlistEnabled: !!event.waitlistEnabled,
 
@@ -87,7 +117,7 @@ export default async function EditEventPage({
           recurrence: (event.recurrence as any) ?? null,
 
           image: event.image ?? "",
-          images: event.images ?? [],
+          images: safeImages,
           checkInSecret: event.checkInSecret ?? "",
         }}
       />

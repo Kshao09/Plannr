@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useMemo, useState } from "react";
 
+export type TicketTier = "FREE" | "PREMIUM";
+
 export type EventLite = {
   id: string;
   title: string;
@@ -14,6 +16,7 @@ export type EventLite = {
   locationName?: string | null;
   organizerName?: string | null;
   category?: string | null;
+  ticketTier?: TicketTier | null; // ✅ NEW
   image?: string | null;
   isSaved?: boolean;
 };
@@ -57,6 +60,12 @@ function normalizeCoverImage(p?: string | null) {
   }
 
   return v;
+}
+
+function tierLabel(t?: string | null) {
+  const up = String(t ?? "").toUpperCase();
+  if (up === "PREMIUM") return "Premium";
+  return "Free";
 }
 
 export default function EventCard({
@@ -126,6 +135,8 @@ export default function EventCard({
     await onToggleSave();
   }
 
+  const tier = tierLabel(e.ticketTier);
+
   return (
     <div className="group overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm transition hover:shadow-md">
       <Link href={`/public/events/${e.slug}`} className="block">
@@ -148,6 +159,18 @@ export default function EventCard({
               {e.category}
             </div>
           ) : null}
+
+          {/* ✅ Free/Premium */}
+          <div
+            className={[
+              "absolute right-3 top-12 rounded-full border px-2.5 py-1 text-xs font-semibold",
+              tier === "Premium"
+                ? "border-amber-200 bg-amber-50 text-amber-900"
+                : "border-emerald-200 bg-emerald-50 text-emerald-900",
+            ].join(" ")}
+          >
+            {tier}
+          </div>
         </div>
 
         <div className="p-4">
@@ -190,7 +213,6 @@ export default function EventCard({
               disabled={saving}
               className={[
                 "rounded-xl border px-3 py-2 text-sm font-semibold transition disabled:opacity-60",
-                // ✅ Saved = gold bg + black text
                 saved
                   ? "border-amber-300 bg-amber-300 text-black hover:bg-amber-200"
                   : "border-zinc-200 bg-white text-zinc-900 hover:bg-zinc-50",

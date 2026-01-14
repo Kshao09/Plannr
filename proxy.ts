@@ -6,17 +6,17 @@ export default auth((req) => {
   const { pathname } = req.nextUrl;
   const isLoggedIn = !!req.auth;
 
-  // Add pathname header for Server Components (MarketingNav)
+  // Add pathname header for Server Components (MarketingNav, AppLayout, etc.)
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-pathname", pathname);
 
-  // Only protect these areas
+  // ✅ FIX: your app routes are /app/...
   const isProtected =
     pathname.startsWith("/app/dashboard") ||
-    pathname.startsWith("/organizer/create") ||
-    pathname.startsWith("/organizer") ||
-    pathname.startsWith("/community") ||
-    pathname.startsWith("/saved");
+    pathname.startsWith("/app/organizer/create") ||
+    pathname.startsWith("/app/organizer") ||
+    pathname.startsWith("/app/community") ||
+    pathname.startsWith("/app/saved");
 
   if (isProtected && !isLoggedIn) {
     const loginUrl = new URL("/login", req.url);
@@ -27,24 +27,18 @@ export default auth((req) => {
   // Organizer-only areas
   const role = (req.auth?.user as any)?.role;
   if (
-    (pathname.startsWith("/organizer/create") || pathname.startsWith("/organizer")) &&
+    (pathname.startsWith("/app/organizer/create") || pathname.startsWith("/app/organizer")) &&
     role !== "ORGANIZER"
   ) {
     return NextResponse.redirect(new URL("/app/dashboard", req.url));
   }
 
-  // IMPORTANT: pass the modified headers
   return NextResponse.next({
     request: { headers: requestHeaders },
   });
 });
 
+// ✅ Run middleware on all pages so x-pathname is always available
 export const config = {
-  matcher: [
-    "/app/dashboard/:path*",
-    "/organizer/create/:path*",
-    "/organizer/:path*",
-    "/community/:path*",
-    "/saved/:path*",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

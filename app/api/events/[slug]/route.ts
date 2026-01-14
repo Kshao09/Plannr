@@ -136,6 +136,9 @@ async function getRsvpRecipients(eventId: string) {
 const RECURRENCE_VALUES = new Set(["WEEKLY", "MONTHLY", "YEARLY"] as const);
 type RecurrenceValue = (typeof RECURRENCE_VALUES extends Set<infer T> ? T : never) & string;
 
+const TIER_VALUES = new Set(["FREE", "PREMIUM"] as const);
+type TicketTierValue = (typeof TIER_VALUES extends Set<infer T> ? T : never) & string;
+
 export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
 
@@ -172,13 +175,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
         address: true,
         city: true,
         state: true,
+        category: true,
+        ticketTier: true, // ✅ NEW
         capacity: true,
         waitlistEnabled: true,
         image: true,
         images: true,
         isRecurring: true,
         recurrence: true,
-      },
+      } as any,
     });
 
     if (!event) {
@@ -244,11 +249,37 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
       data.endAt = d;
     }
 
+    // ✅ Basic time sanity if both present in request
+    if (has(body, "startAt") && has(body, "endAt")) {
+      const s = data.startAt as Date;
+      const e = data.endAt as Date;
+      if (isValidDate(s) && isValidDate(e) && e.getTime() <= s.getTime()) {
+        const res = NextResponse.json({ error: "End must be after Start" }, { status: 400 });
+        await finishIdempotency({ recordId, statusCode: 400, response: { error: "End must be after Start" } });
+        return res;
+      }
+    }
+
     if (has(body, "locationName")) data.locationName = toTrimmedOrNull(body.locationName);
     if (has(body, "address")) data.address = toTrimmedOrNull(body.address);
     if (has(body, "city")) data.city = toTrimmedOrNull(body.city);
     if (has(body, "state")) data.state = toTrimmedOrNull(body.state);
     if (has(body, "category")) data.category = toTrimmedOrNull(body.category);
+
+    // ✅ NEW: ticketTier
+    if (has(body, "ticketTier")) {
+      if (body.ticketTier === null || body.ticketTier === "") {
+        data.ticketTier = "FREE";
+      } else {
+        const val = String(body.ticketTier).toUpperCase();
+        if (!TIER_VALUES.has(val as TicketTierValue)) {
+          const res = NextResponse.json({ error: "Invalid ticketTier (FREE, PREMIUM)" }, { status: 400 });
+          await finishIdempotency({ recordId, statusCode: 400, response: { error: "Invalid ticketTier" } });
+          return res;
+        }
+        data.ticketTier = val;
+      }
+    }
 
     if (has(body, "image")) data.image = toTrimmedOrNull(body.image);
 
@@ -319,6 +350,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
         address: true,
         city: true,
         state: true,
+        category: true,
+        ticketTier: true, // ✅ NEW
         capacity: true,
         waitlistEnabled: true,
         image: true,
@@ -326,7 +359,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
         isRecurring: true,
         recurrence: true,
         updatedAt: true, // ✅ used for dedupe key
-      },
+      } as any,
     });
 
     const after: EventSnapshot = {
@@ -340,6 +373,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
 
     const changes = diffEvent(before, after);
 
+    // Only email for time/location/capacity/waitlist changes (your existing behavior)
     if (changes.length > 0) {
       const baseUrl = getBaseUrlFromRequest(req);
       const eventUrl = `${baseUrl}/public/events/${updated.slug}`;

@@ -20,7 +20,9 @@ function toArrayParam(v: string | string[] | undefined) {
   return v.split(",").filter(Boolean);
 }
 
-async function resolveUserContext(session: any): Promise<{ userId: string | null; role: "MEMBER" | "ORGANIZER" | null }> {
+async function resolveUserContext(
+  session: any
+): Promise<{ userId: string | null; role: "MEMBER" | "ORGANIZER" | null }> {
   const su = session?.user ?? {};
   const sessionId = (su as any)?.id as string | undefined;
   const sessionEmail = (su as any)?.email as string | undefined;
@@ -33,7 +35,10 @@ async function resolveUserContext(session: any): Promise<{ userId: string | null
       where: { email: sessionEmail },
       select: { id: true, role: true },
     });
-    return { userId: dbUser?.id ?? sessionId ?? null, role: (sessionRole ?? dbUser?.role ?? null) as any };
+    return {
+      userId: dbUser?.id ?? sessionId ?? null,
+      role: (sessionRole ?? dbUser?.role ?? null) as any,
+    };
   }
 
   return { userId: sessionId ?? null, role: sessionRole ?? null };
@@ -47,6 +52,7 @@ type EventsItem = {
   endAt?: string | Date | null;
   locationName?: string | null;
   category?: string | null;
+  ticketTier?: string | null;
   image?: string | null;
   organizer?: { name?: string | null } | null;
 };
@@ -58,7 +64,11 @@ type EventsResponse = {
   items: EventsItem[];
 };
 
-export default async function EventsPage({ searchParams }: { searchParams: Promise<SP> | SP }) {
+export default async function EventsPage({
+  searchParams,
+}: {
+  searchParams: Promise<SP> | SP;
+}) {
   const sp = await Promise.resolve(searchParams);
 
   const page = Number(sp.page ?? "1") || 1;
@@ -71,13 +81,15 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
 
   const loc = toArrayParam(sp.loc);
   const category = toArrayParam(sp.category);
-
-  // ✅ NEW: "By you"
-  const mine = String(sp.mine ?? "") === "1";
+  const tier = toArrayParam(sp.tier);
 
   const session = await auth();
-  const { userId, role } = session?.user ? await resolveUserContext(session) : { userId: null, role: null };
-  const showMine = role === "ORGANIZER" && !!userId;
+  const { userId, role } = session?.user
+    ? await resolveUserContext(session)
+    : { userId: null, role: null };
+
+  // ✅ Organizers ALWAYS see only their own events. Members see all events.
+  const organizerOnlyId = role === "ORGANIZER" && userId ? userId : undefined;
 
   const [data, options] = await Promise.all([
     getEvents({
@@ -89,7 +101,8 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
       to,
       loc,
       category,
-      organizerId: mine && userId ? userId : undefined,
+      tier,
+      organizerId: organizerOnlyId,
     }) as Promise<EventsResponse>,
     getEventFilterOptions(),
   ]);
@@ -114,6 +127,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
     endAt: e.endAt ? new Date(e.endAt).toISOString() : null,
     locationName: e.locationName ?? null,
     category: e.category ?? null,
+    ticketTier: (e.ticketTier as any) ?? "FREE",
     image: e.image ?? null,
     organizerName: e.organizer?.name ?? null,
     isSaved: savedSet.has(e.id),
@@ -132,7 +146,11 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
           <h1 className="text-4xl font-semibold tracking-tight">Events</h1>
         </div>
 
-        <EventsFilters locations={options.locations} categories={options.categories} showMine={showMine} />
+        <EventsFilters
+          locations={options.locations}
+          categories={options.categories}
+          tiers={options.tiers}
+        />
 
         {cards.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-zinc-200 bg-white p-6 text-zinc-900">

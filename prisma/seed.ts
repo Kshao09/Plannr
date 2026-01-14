@@ -1,5 +1,6 @@
 // prisma/seed.ts
 import { prisma } from "./prismaClient";
+import { TicketTier } from "@prisma/client";
 
 function atLocal(daysFromNow: number, hour: number, minute = 0) {
   const d = new Date();
@@ -8,10 +9,58 @@ function atLocal(daysFromNow: number, hour: number, minute = 0) {
   return d;
 }
 
-async function main() {
+function parseCityStateFromAddress(addr: string): {
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+} {
+  const raw = (addr ?? "").trim();
+  if (!raw) return {};
+
+  const parts = raw.split(",").map((p) => p.trim()).filter(Boolean);
+  const last = parts[parts.length - 1];
+  const looksState = /^[A-Z]{2}$/.test(last);
+
+  // "Brickell, Miami, FL" or "Miami, FL"
+  if (parts.length >= 2 && looksState) {
+    const state = last;
+    const city = parts[parts.length - 2] || null;
+    const prefix = parts.slice(0, -2);
+    const address = prefix.length ? prefix.join(", ") : null;
+    return { address, city, state };
+  }
+
+  // If it doesn't match, keep it as address only
+  return { address: raw, city: null, state: null };
+}
+
+async function resolveSeedOrganizerId() {
+  const email = process.env.SEED_ORGANIZER_EMAIL?.trim();
+
+  if (email) {
+    const byEmail = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, role: true },
+    });
+
+    if (!byEmail) {
+      throw new Error(
+        `SEED_ORGANIZER_EMAIL=${email} not found in User table. Sign in once with that email so the user exists, then re-run seed.`
+      );
+    }
+    if (byEmail.role !== "ORGANIZER") {
+      throw new Error(
+        `User ${email} exists but role is ${byEmail.role}. Change it to ORGANIZER or create an organizer account, then re-run.`
+      );
+    }
+
+    console.log(`🌱 Seeding events for organizer email=${byEmail.email} id=${byEmail.id}`);
+    return byEmail.id;
+  }
+
   const organizer = await prisma.user.findFirst({
     where: { role: "ORGANIZER" },
-    select: { id: true },
+    select: { id: true, email: true }
   });
 
   if (!organizer) {
@@ -20,7 +69,16 @@ async function main() {
     );
   }
 
-  const events = [
+  console.log(
+    `🌱 Seeding events for FIRST organizer (set SEED_ORGANIZER_EMAIL to control this). id=${organizer.id} email=${organizer.email ?? "unknown"}`
+  );
+  return organizer.id;
+}
+
+async function main() {
+  const organizerId = await resolveSeedOrganizerId();
+
+  const rawEvents = [
     // --- landing page (5) ---
     {
       slug: "sunset-rooftop-meetup",
@@ -36,6 +94,7 @@ async function main() {
       images: ["/images/rooftop001.png"],
       capacity: 60,
       waitlistEnabled: true,
+      ticketTier: TicketTier.FREE,
     },
     {
       slug: "ai-club-meetup",
@@ -51,6 +110,7 @@ async function main() {
       images: ["/images/ai001.png"],
       capacity: 80,
       waitlistEnabled: true,
+      ticketTier: TicketTier.FREE,
     },
     {
       slug: "food-truck-festival",
@@ -66,6 +126,7 @@ async function main() {
       images: ["/images/food001.png"],
       capacity: 200,
       waitlistEnabled: true,
+      ticketTier: TicketTier.PREMIUM,
     },
     {
       slug: "chess-club-library",
@@ -81,6 +142,7 @@ async function main() {
       images: ["/images/chess001.png"],
       capacity: 30,
       waitlistEnabled: true,
+      ticketTier: TicketTier.FREE,
     },
     {
       slug: "rock-concert-night",
@@ -96,6 +158,7 @@ async function main() {
       images: ["/images/rockConcert001.png"],
       capacity: 150,
       waitlistEnabled: true,
+      ticketTier: TicketTier.PREMIUM,
     },
 
     // --- events page extra (4) ---
@@ -113,6 +176,7 @@ async function main() {
       images: ["/images/arts001.png"],
       capacity: 70,
       waitlistEnabled: true,
+      ticketTier: TicketTier.PREMIUM,
     },
     {
       slug: "pickup-basketball",
@@ -128,6 +192,7 @@ async function main() {
       images: ["/images/basketball001.png"],
       capacity: 40,
       waitlistEnabled: true,
+      ticketTier: TicketTier.FREE,
     },
     {
       slug: "soccer-scrimmage",
@@ -143,6 +208,7 @@ async function main() {
       images: ["/images/soccer001.png"],
       capacity: 44,
       waitlistEnabled: true,
+      ticketTier: TicketTier.FREE,
     },
     {
       slug: "music-open-mic",
@@ -158,14 +224,26 @@ async function main() {
       images: ["/images/music001.png"],
       capacity: 55,
       waitlistEnabled: true,
+      ticketTier: TicketTier.FREE,
     },
   ];
+
+  const events = rawEvents.map((e) => {
+    const parsed = parseCityStateFromAddress(e.address);
+    return {
+      ...e,
+      // store neighborhood/street in address, city/state separate
+      address: parsed.address ?? e.address ?? null,
+      city: parsed.city ?? null,
+      state: parsed.state ?? null,
+    };
+  });
 
   for (const e of events) {
     await prisma.event.upsert({
       where: { slug: e.slug },
-      update: { ...e, organizerId: organizer.id },
-      create: { ...e, organizerId: organizer.id },
+      update: { ...e, organizerId },
+      create: { ...e, organizerId },
     });
   }
 

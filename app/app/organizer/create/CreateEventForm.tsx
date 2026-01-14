@@ -7,6 +7,7 @@ import { EVENT_CATEGORIES } from "@/lib/EventCategories";
 import EventImagesField from "@/components/EventImagesField";
 
 type RecurrenceFrequency = "WEEKLY" | "MONTHLY" | "YEARLY";
+type TicketTier = "FREE" | "PREMIUM";
 
 function toISOFromDatetimeLocal(v: string) {
   const d = new Date(v);
@@ -31,6 +32,7 @@ export default function CreateEventForm() {
   const [stateCode, setStateCode] = useState("");
 
   const [category, setCategory] = useState("");
+  const [ticketTier, setTicketTier] = useState<TicketTier>("FREE"); // ✅ NEW
   const [capacity, setCapacity] = useState<string>("");
   const [waitlistEnabled, setWaitlistEnabled] = useState<boolean>(true);
 
@@ -64,6 +66,8 @@ export default function CreateEventForm() {
 
       category: category || null,
 
+      ticketTier, // ✅ NEW
+
       capacity: cap != null && Number.isFinite(cap) ? Math.max(1, Math.floor(cap)) : null,
       waitlistEnabled,
 
@@ -80,6 +84,7 @@ export default function CreateEventForm() {
     city,
     stateCode,
     category,
+    ticketTier,
     capacity,
     waitlistEnabled,
     isRecurring,
@@ -199,7 +204,7 @@ export default function CreateEventForm() {
           </label>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
           <label className={labelClass}>
             Location name
             <input
@@ -219,6 +224,19 @@ export default function CreateEventForm() {
                   {c}
                 </option>
               ))}
+            </select>
+          </label>
+
+          {/* ✅ NEW */}
+          <label className={labelClass}>
+            Pricing
+            <select
+              className={inputClass}
+              value={ticketTier}
+              onChange={(e) => setTicketTier(e.target.value as TicketTier)}
+            >
+              <option value="FREE">Free</option>
+              <option value="PREMIUM">Premium</option>
             </select>
           </label>
         </div>

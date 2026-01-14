@@ -1,4 +1,3 @@
-// app/api/events/route.ts
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
@@ -6,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 
 type RecurrenceFrequency = "WEEKLY" | "MONTHLY" | "YEARLY";
+type TicketTier = "FREE" | "PREMIUM";
 
 function slugify(s: string) {
   return s
@@ -15,22 +15,26 @@ function slugify(s: string) {
     .replace(/(^-|-$)+/g, "");
 }
 
-async function resolveUserId(session: any): Promise<string | null> {
+async function resolveUser(session: any): Promise<{ userId: string | null; role: string | null }> {
   const su = session?.user ?? {};
   const sessionId = (su as any)?.id as string | undefined;
+  const sessionRole = (su as any)?.role as string | undefined;
   const sessionEmail = su?.email as string | undefined;
 
-  if (sessionId) return sessionId;
+  if (sessionId && sessionRole) return { userId: sessionId, role: sessionRole };
 
   if (sessionEmail) {
     const dbUser = await prisma.user.findUnique({
       where: { email: sessionEmail },
-      select: { id: true },
+      select: { id: true, role: true },
     });
-    return dbUser?.id ?? null;
+    return {
+      userId: dbUser?.id ?? sessionId ?? null,
+      role: sessionRole ?? (dbUser?.role as any) ?? null,
+    };
   }
 
-  return null;
+  return { userId: sessionId ?? null, role: sessionRole ?? null };
 }
 
 async function makeUniqueSlug(title: string) {
@@ -67,7 +71,15 @@ function normalizeRecurrence(v: unknown): RecurrenceFrequency | null {
   const s = toTrimmedOrNull(v);
   if (!s) return null;
   const up = s.toUpperCase();
-  if (up === "WEEKLY" || up === "MONTHLY" || up === "YEARLY") return up;
+  if (up === "WEEKLY" || up === "MONTHLY" || up === "YEARLY") return up as RecurrenceFrequency;
+  return null;
+}
+
+function normalizeTicketTier(v: unknown): TicketTier | null {
+  const s = toTrimmedOrNull(v);
+  if (!s) return null;
+  const up = s.toUpperCase();
+  if (up === "FREE" || up === "PREMIUM") return up as TicketTier;
   return null;
 }
 
@@ -95,14 +107,12 @@ function nextOccurrenceStart(startAt: Date, freq: RecurrenceFrequency) {
 
 export async function POST(req: Request) {
   const session = await auth();
-  const role = (session?.user as any)?.role;
-
-  if (!session?.user || role !== "ORGANIZER") {
+  if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const organizerId = await resolveUserId(session);
-  if (!organizerId) {
+  const { userId: organizerId, role } = await resolveUser(session);
+  if (!organizerId || role !== "ORGANIZER") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -122,26 +132,27 @@ export async function POST(req: Request) {
   }
 
   const description = toTrimmedOrNull(body?.description);
-
   const locationName = toTrimmedOrNull(body?.locationName);
-
   const address = toTrimmedOrNull(body?.address);
   const city = toTrimmedOrNull(body?.city);
   const state = normalizeState(body?.state);
-
   const category = toTrimmedOrNull(body?.category);
 
-  const capRaw = body?.capacity;
-  const capacity =
-    capRaw === null || capRaw === undefined || capRaw === ""
-      ? null
-      : Math.max(1, Math.floor(Number(capRaw)));
+  const ticketTier = normalizeTicketTier(body?.ticketTier) ?? "FREE";
 
-  if (capacity !== null && !Number.isFinite(capacity)) {
-    return NextResponse.json({ error: "Invalid capacity" }, { status: 400 });
+  // ✅ capacity parsing (safe + strict)
+  const capRaw = body?.capacity;
+  let capacity: number | null = null;
+  if (!(capRaw === null || capRaw === undefined || capRaw === "")) {
+    const capNum = Number(capRaw);
+    if (!Number.isFinite(capNum)) {
+      return NextResponse.json({ error: "Invalid capacity" }, { status: 400 });
+    }
+    capacity = Math.max(1, Math.floor(capNum));
   }
 
-  const waitlistEnabled = body?.waitlistEnabled === undefined ? true : Boolean(body.waitlistEnabled);
+  const waitlistEnabled =
+    body?.waitlistEnabled === undefined ? true : Boolean(body.waitlistEnabled);
 
   const isRecurring = Boolean(body?.isRecurring);
   const recurrence = normalizeRecurrence(body?.recurrence);
@@ -153,8 +164,6 @@ export async function POST(req: Request) {
     );
   }
 
-  // ✅ Critical validation to prevent calendar explosion:
-  // End time must be within ONE recurrence interval.
   if (isRecurring && recurrence) {
     const nextStart = nextOccurrenceStart(startAt, recurrence);
     if (endAt.getTime() > nextStart.getTime()) {
@@ -162,7 +171,7 @@ export async function POST(req: Request) {
         {
           error:
             `For recurring events, End must be before the next occurrence starts. ` +
-            `Tip: End is the end time of EACH occurrence (not the series end date).`,
+            `End is the end time of EACH occurrence (not the series end date).`,
         },
         { status: 400 }
       );
@@ -183,12 +192,13 @@ export async function POST(req: Request) {
       city,
       state,
       category,
+      ticketTier, // ✅ NEW
       capacity,
       waitlistEnabled,
       isRecurring,
       recurrence: isRecurring ? (recurrence as any) : null,
       organizerId,
-    },
+    } as any,
     select: { slug: true },
   });
 

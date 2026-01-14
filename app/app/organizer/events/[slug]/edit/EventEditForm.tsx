@@ -7,6 +7,7 @@ import { EVENT_CATEGORIES } from "@/lib/EventCategories";
 import EventImagesField from "@/components/EventImagesField";
 
 type RecurrenceFrequency = "WEEKLY" | "MONTHLY" | "YEARLY";
+type TicketTier = "FREE" | "PREMIUM";
 
 function toDatetimeLocalFromISO(iso: string) {
   if (!iso) return "";
@@ -34,6 +35,7 @@ type EditInitial = {
   state: string;
 
   category: string;
+  ticketTier?: TicketTier | null; // ✅ NEW (optional so your server page won’t break until you add it)
   capacity: number | null;
   waitlistEnabled: boolean;
 
@@ -51,6 +53,7 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
   const toast = useToast();
 
   const [saving, setSaving] = useState(false);
+  const [imagesUploading, setImagesUploading] = useState(false);
 
   const [title, setTitle] = useState(initial.title ?? "");
   const [description, setDescription] = useState(initial.description ?? "");
@@ -63,10 +66,9 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
   const [stateCode, setStateCode] = useState((initial.state ?? "").toUpperCase());
 
   const [category, setCategory] = useState(initial.category ?? "");
+  const [ticketTier, setTicketTier] = useState<TicketTier>((initial.ticketTier ?? "FREE") as TicketTier); // ✅ NEW
 
-  const [capacity, setCapacity] = useState<string>(
-    initial.capacity == null ? "" : String(initial.capacity)
-  );
+  const [capacity, setCapacity] = useState<string>(initial.capacity == null ? "" : String(initial.capacity));
   const [waitlistEnabled, setWaitlistEnabled] = useState<boolean>(!!initial.waitlistEnabled);
 
   const [isRecurring, setIsRecurring] = useState<boolean>(!!initial.isRecurring);
@@ -100,6 +102,8 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
       state: safeState,
 
       category: category || null,
+      ticketTier, // ✅ NEW
+
       capacity: cap != null && Number.isFinite(cap) ? Math.max(1, Math.floor(cap)) : null,
       waitlistEnabled,
 
@@ -119,6 +123,7 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
     city,
     stateCode,
     category,
+    ticketTier,
     capacity,
     waitlistEnabled,
     isRecurring,
@@ -138,6 +143,7 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
 
     if ((payload.images?.length ?? 0) > 5) return "Max 5 gallery images.";
     if (payload.isRecurring && !payload.recurrence) return "Choose a recurrence frequency.";
+    if (imagesUploading) return "Please wait for image uploads to finish.";
 
     return null;
   }
@@ -218,7 +224,7 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
           </label>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
           <label className={labelClass}>
             Location name
             <input
@@ -238,6 +244,19 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
                   {c}
                 </option>
               ))}
+            </select>
+          </label>
+
+          {/* ✅ NEW */}
+          <label className={labelClass}>
+            Pricing
+            <select
+              className={inputClass}
+              value={ticketTier}
+              onChange={(e) => setTicketTier(e.target.value as TicketTier)}
+            >
+              <option value="FREE">Free</option>
+              <option value="PREMIUM">Premium</option>
             </select>
           </label>
         </div>
@@ -326,10 +345,10 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
           </label>
         </div>
 
-        {/* If EventImagesField still looks dark, it needs similar class updates inside that component */}
         <EventImagesField
           cover={cover}
           images={images}
+          onUploadingChange={setImagesUploading}
           onChange={({ cover, images }) => {
             setCover(cover);
             setImages(images);
@@ -339,10 +358,10 @@ export default function EventEditForm({ slug, initial }: { slug: string; initial
         <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || imagesUploading}
             className="rounded-xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
           >
-            {saving ? "Saving…" : "Save changes"}
+            {saving ? "Saving…" : imagesUploading ? "Uploading images…" : "Save changes"}
           </button>
 
           <button

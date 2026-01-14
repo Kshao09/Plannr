@@ -24,6 +24,11 @@ enum AttendanceState {
   WAITLISTED
 }
 
+enum TicketTier {
+  FREE
+  PREMIUM
+}
+
 enum RecurrenceFrequency {
   WEEKLY
   MONTHLY
@@ -67,6 +72,7 @@ model Event {
   category String?
   image    String?
   images   String[] @default([]) // ✅ up to 5 stored here
+  ticketTier TicketTier @default(FREE)
 
   isRecurring  Boolean  @default(false)
   recurrence   RecurrenceFrequency?
