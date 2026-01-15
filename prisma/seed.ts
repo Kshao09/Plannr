@@ -1,5 +1,5 @@
 // prisma/seed.ts
-import { prisma } from "./prismaClient";
+import { prisma } from "@/lib/prisma";
 import { TicketTier } from "@prisma/client";
 
 function atLocal(daysFromNow: number, hour: number, minute = 0) {
