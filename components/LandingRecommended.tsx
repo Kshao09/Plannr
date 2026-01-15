@@ -240,14 +240,14 @@ export default function LandingRecommended({ fallbackCity = "Miami" }: { fallbac
                 <div className="text-base font-semibold line-clamp-2">{e.title}</div>
 
                 {/* Extra safety: suppress hydration warning just for this line */}
-                <div className="mt-2 text-sm text-zinc-400" suppressHydrationWarning>
+                <div className="mt-2 text-sm text-zinc-700" suppressHydrationWarning>
                   {when}
                   {e.locationName ? ` • ${e.locationName}` : ""}
                 </div>
 
                 {e.organizerName && (
-                  <div className="mt-2 text-xs text-zinc-500">
-                    By <span className="text-zinc-300">{e.organizerName}</span>
+                  <div className="mt-2 text-xs text-zinc-800">
+                    By <span className="text-zinc-800">{e.organizerName}</span>
                   </div>
                 )}
 

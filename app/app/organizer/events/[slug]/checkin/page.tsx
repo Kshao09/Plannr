@@ -101,24 +101,40 @@ export default async function OrganizerCheckInPage({
   };
 
   // ✅ PASS PATHS (not absolute)
-  const sharePath = `/app/organizer/events/${encodeURIComponent(event.slug)}/checkin`;
+  // Event details page (for back arrow + sharing)
+  const eventDetailsPath = `/public/events/${encodeURIComponent(event.slug)}`;
+
+  // If you want CheckInClient to show a "share event" QR/link, this should be the event details.
+  const sharePath = eventDetailsPath;
+
+  // Staff check-in (no login)
   const staffPath = `/checkin/${encodeURIComponent(event.slug)}?secret=${encodeURIComponent(
     event.checkInSecret
   )}`;
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-10">
-      <div className="mb-6 flex items-start justify-between gap-4">
+      {/* ✅ Back arrow (same window) */}
+      <Link
+        href={eventDetailsPath}
+        className="mt-1 inline-flex h-10 w-10 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-900 hover:bg-zinc-50"
+        aria-label="Back to event"
+        title="Back to event"
+      >
+        ←
+      </Link>
+
+      <div className="mb-6 mt-4 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Organizer check-in</h1>
-          <p className="mt-1 text-sm text-black">
+          <h1 className="text-2xl font-bold text-zinc-900">Organizer check-in</h1>
+          <p className="mt-1 text-sm text-zinc-700">
             Manage check-ins for <span className="font-semibold">{safeEvent.title}</span>
           </p>
         </div>
 
         <Link
           href={`/app/organizer/events/${safeEvent.slug}/edit`}
-          className="rounded-xl border border-zinc-700 bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/10"
+          className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
         >
           Edit event
         </Link>
