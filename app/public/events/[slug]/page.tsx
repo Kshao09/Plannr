@@ -147,7 +147,10 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
   const imagesToShow = buildImagesToShow({ image: event.image, images: event.images });
 
   const base = await getBaseUrl();
-  const shareUrl = new URL(`/public/events/${encodeURIComponent(event.slug)}`, base).toString();
+  const shareUrl = new URL(
+    `/app/organizer/events/${encodeURIComponent(event.slug)}/checkin`, base
+  ).toString();
+
   const staffUrl = new URL(
     `/checkin/${encodeURIComponent(event.slug)}?secret=${encodeURIComponent(event.checkInSecret)}`,
     base

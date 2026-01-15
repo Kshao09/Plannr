@@ -18,7 +18,7 @@ export default function CheckInClient({
   const [busy, setBusy] = useState(false);
 
   const resolvedShare = useMemo(() => {
-    return shareUrl ?? `/public/events/${event.slug}`;
+    return shareUrl ?? `/app/organizer/events/${event.slug}/checkin`;
   }, [shareUrl, event.slug]);
 
   const resolvedStaff = useMemo(() => {
@@ -76,22 +76,6 @@ export default function CheckInClient({
               Waitlist: <b className="text-black">{waitlisted.length}</b>
             </div>
           ) : null}
-        </div>
-
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <div>
-            <div className="text-sm font-semibold text-black">Event page (share)</div>
-            <div className="mt-2">
-              <QrImage text={resolvedShare} />
-            </div>
-          </div>
-
-          <div>
-            <div className="text-sm font-semibold text-black">Staff check-in link</div>
-            <div className="mt-2">
-              <QrImage text={resolvedStaff} />
-            </div>
-          </div>
         </div>
 
         <div className="mt-6 flex items-stretch gap-2">

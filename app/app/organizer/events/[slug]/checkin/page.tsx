@@ -101,7 +101,7 @@ export default async function OrganizerCheckInPage({
   };
 
   // ✅ PASS PATHS (not absolute)
-  const sharePath = `/public/events/${encodeURIComponent(event.slug)}`;
+  const sharePath = `/app/organizer/events/${encodeURIComponent(event.slug)}/checkin`;
   const staffPath = `/checkin/${encodeURIComponent(event.slug)}?secret=${encodeURIComponent(
     event.checkInSecret
   )}`;

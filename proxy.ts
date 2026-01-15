@@ -1,16 +1,15 @@
-// middleware.ts
-import { auth } from "@/auth";
+// proxy.ts (project root)
+import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
 
-export default auth((req) => {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const isLoggedIn = !!req.auth;
 
-  // Add pathname header for Server Components (MarketingNav, AppLayout, etc.)
+  // Add pathname header for Server Components
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-pathname", pathname);
 
-  // ✅ FIX: your app routes are /app/...
   const isProtected =
     pathname.startsWith("/app/dashboard") ||
     pathname.startsWith("/app/organizer/create") ||
@@ -18,17 +17,20 @@ export default auth((req) => {
     pathname.startsWith("/app/community") ||
     pathname.startsWith("/app/saved");
 
-  if (isProtected && !isLoggedIn) {
+  const token = await getToken({
+    req,
+    secret: process.env.AUTH_SECRET, // make sure this exists in .env.local
+  });
+
+  if (isProtected && !token) {
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  // Organizer-only areas
-  const role = (req.auth?.user as any)?.role;
   if (
     (pathname.startsWith("/app/organizer/create") || pathname.startsWith("/app/organizer")) &&
-    role !== "ORGANIZER"
+    (token as any)?.role !== "ORGANIZER"
   ) {
     return NextResponse.redirect(new URL("/app/dashboard", req.url));
   }
@@ -36,9 +38,8 @@ export default auth((req) => {
   return NextResponse.next({
     request: { headers: requestHeaders },
   });
-});
+}
 
-// ✅ Run middleware on all pages so x-pathname is always available
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
