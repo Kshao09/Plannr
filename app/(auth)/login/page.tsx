@@ -60,6 +60,8 @@ export default async function LoginPage({
       ? "Invalid email or password."
       : error
       ? "Could not sign you in."
+      : error === "NoAccount"
+      ? "No account found for this Google email. Please sign up first."
       : null;
     
       

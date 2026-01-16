@@ -6,7 +6,6 @@ import { getToken } from "next-auth/jwt";
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Add pathname header for Server Components
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-pathname", pathname);
 
@@ -19,20 +18,13 @@ export async function proxy(req: NextRequest) {
 
   const token = await getToken({
     req,
-    secret: process.env.AUTH_SECRET, // make sure this exists in .env.local
+    secret: process.env.AUTH_SECRET,
   });
 
   if (isProtected && !token) {
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);
-  }
-
-  if (
-    (pathname.startsWith("/app/organizer/create") || pathname.startsWith("/app/organizer")) &&
-    (token as any)?.role !== "ORGANIZER"
-  ) {
-    return NextResponse.redirect(new URL("/app/dashboard", req.url));
   }
 
   return NextResponse.next({

@@ -1,7 +1,26 @@
 "use client";
 
 import { signOut } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
+
+function clearPlannrClientState() {
+  if (typeof window === "undefined") return;
+
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("plannr:")) localStorage.removeItem(k);
+    }
+  } catch {}
+
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const k = sessionStorage.key(i);
+      if (k && k.startsWith("plannr:")) sessionStorage.removeItem(k);
+    }
+  } catch {}
+}
 
 export default function SignOutButton({
   className,
@@ -13,6 +32,7 @@ export default function SignOutButton({
   children?: React.ReactNode;
 }) {
   const [pending, setPending] = useState(false);
+  const router = useRouter();
 
   return (
     <button
@@ -23,11 +43,15 @@ export default function SignOutButton({
         if (pending) return;
         setPending(true);
         try {
-          // Broadcast helper (optional)
-          localStorage.setItem("plannr:auth", String(Date.now()));
+          // 1) Clear your own app state
+          clearPlannrClientState();
 
-          // ✅ Use a real navigation so server nav updates instantly
-          await signOut({ callbackUrl: redirectTo });
+          // 2) Invalidate Auth.js session cookie
+          await signOut({ redirect: false });
+
+          // 3) Update UI immediately (no manual refresh)
+          router.replace(redirectTo);
+          router.refresh();
         } finally {
           setPending(false);
         }

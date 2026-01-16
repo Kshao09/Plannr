@@ -44,7 +44,7 @@ export default async function MarketingNav() {
               {isOrganizer ? (
                 <Link
                   href="/app/organizer/create"
-                  className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-800"
+                  className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition hover:bg-zinc-50 hover:border-zinc-300"
                 >
                   Create
                 </Link>

@@ -1,3 +1,4 @@
+// app/api/events/route.ts
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
@@ -105,6 +106,66 @@ function nextOccurrenceStart(startAt: Date, freq: RecurrenceFrequency) {
   return addYears(startAt, 1);
 }
 
+/**
+ * GET /api/events?city=Miami&state=FL&take=12&skip=0&category=Tech&upcoming=1
+ * Public listing endpoint.
+ */
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const city = toTrimmedOrNull(url.searchParams.get("city"));
+  const state = normalizeState(url.searchParams.get("state"));
+  const category = toTrimmedOrNull(url.searchParams.get("category"));
+
+  const takeRaw = url.searchParams.get("take");
+  const skipRaw = url.searchParams.get("skip");
+
+  const take = Math.min(
+    50,
+    Math.max(1, Number.isFinite(Number(takeRaw)) ? Math.floor(Number(takeRaw)) : 12)
+  );
+  const skip = Math.max(0, Number.isFinite(Number(skipRaw)) ? Math.floor(Number(skipRaw)) : 0);
+
+  const upcoming = url.searchParams.get("upcoming") === "1";
+
+  const where: any = {};
+  if (city) where.city = city;
+  if (state) where.state = state;
+  if (category) where.category = category;
+  if (upcoming) where.startAt = { gte: new Date() };
+
+  const events = await prisma.event.findMany({
+    where,
+    orderBy: { startAt: "asc" },
+    skip,
+    take,
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+      description: true,
+      startAt: true,
+      endAt: true,
+      locationName: true,
+      address: true,
+      city: true,
+      state: true,
+      category: true,
+      image: true,
+      images: true,
+      ticketTier: true,
+      isRecurring: true,
+      recurrence: true,
+      organizerId: true,
+      capacity: true,
+      waitlistEnabled: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  return NextResponse.json({ events }, { status: 200 });
+}
+
 export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user) {
@@ -140,7 +201,6 @@ export async function POST(req: Request) {
 
   const ticketTier = normalizeTicketTier(body?.ticketTier) ?? "FREE";
 
-  // ✅ capacity parsing (safe + strict)
   const capRaw = body?.capacity;
   let capacity: number | null = null;
   if (!(capRaw === null || capRaw === undefined || capRaw === "")) {
@@ -192,7 +252,7 @@ export async function POST(req: Request) {
       city,
       state,
       category,
-      ticketTier, // ✅ NEW
+      ticketTier,
       capacity,
       waitlistEnabled,
       isRecurring,

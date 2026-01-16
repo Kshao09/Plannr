@@ -1,3 +1,4 @@
+// components/AuthSync.tsx
 "use client";
 
 import { useSession } from "next-auth/react";
@@ -14,21 +15,21 @@ export default function AuthSync() {
     const was = prev.current;
     prev.current = status;
 
-    // Session changed (this tab OR another tab)
+    // Don’t spam refreshes on auth routes
+    const onAuthRoute = (pathname ?? "").startsWith("/login") || (pathname ?? "").startsWith("/signup") || (pathname ?? "").startsWith("/auth");
+
     if (was !== status) {
-      // If user got signed out, refresh server components so /app layout updates
       if (status === "unauthenticated") {
-        // If they’re on a protected page, send them to login (optional but nice)
-        if (pathname?.startsWith("/app")) {
-          router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+        if ((pathname ?? "").startsWith("/app")) {
+          router.replace(`/login?next=${encodeURIComponent(pathname ?? "/app/dashboard")}`);
+          return;
         }
       }
 
-      router.refresh();
+      if (!onAuthRoute) router.refresh();
     }
   }, [status, router, pathname]);
 
-  // Extra “poke” mechanism in case you want it (SignOutButton sets this):
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === "plannr:auth") router.refresh();
