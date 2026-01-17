@@ -7,11 +7,19 @@ import { EVENT_CATEGORIES } from "@/lib/EventCategories";
 import EventImagesField from "@/components/EventImagesField";
 
 type RecurrenceFrequency = "WEEKLY" | "MONTHLY" | "YEARLY";
-type TicketTier = "FREE" | "PREMIUM";
 
 function toISOFromDatetimeLocal(v: string) {
   const d = new Date(v);
   return d.toISOString();
+}
+
+function dollarsToCentsInt(dollars: string) {
+  // integer dollars only (per your requirement)
+  const n = Number(dollars);
+  if (!Number.isFinite(n)) return null;
+  const int = Math.floor(n);
+  if (int < 0) return null;
+  return int * 100;
 }
 
 export default function CreateEventForm() {
@@ -32,8 +40,12 @@ export default function CreateEventForm() {
   const [stateCode, setStateCode] = useState("");
 
   const [category, setCategory] = useState("");
-  const [ticketTier, setTicketTier] = useState<TicketTier>("FREE"); // ✅ NEW
-  const [capacity, setCapacity] = useState<string>("");
+
+  // ✅ NEW: checkbox for premium + integer dollars input
+  const [isPremium, setIsPremium] = useState(false);
+  const [priceDollars, setPriceDollars] = useState("25");
+
+  const [capacity, setCapacity] = useState<string>("50");
   const [waitlistEnabled, setWaitlistEnabled] = useState<boolean>(true);
 
   const [isRecurring, setIsRecurring] = useState<boolean>(false);
@@ -53,20 +65,24 @@ export default function CreateEventForm() {
     const normalizedState = stateCode.trim().toUpperCase();
     const safeState = normalizedState ? normalizedState.slice(0, 2) : null;
 
+    const priceCents = isPremium ? dollarsToCentsInt(priceDollars) : 0;
+
     return {
       title: title.trim(),
       description: description.trim() || null,
       startAt: startAt ? toISOFromDatetimeLocal(startAt) : null,
       endAt: endAt ? toISOFromDatetimeLocal(endAt) : null,
-      locationName: locationName.trim() || null,
 
-      address: address.trim() || null,
-      city: city.trim() || null,
+      // ✅ required (per your request)
+      locationName: locationName.trim(),
+      address: address.trim(),
+      city: city.trim(),
       state: safeState,
-
       category: category || null,
 
-      ticketTier, // ✅ NEW
+      ticketTier: isPremium ? "PREMIUM" : "FREE",
+      priceCents: priceCents ?? null,
+      currency: "usd",
 
       capacity: cap != null && Number.isFinite(cap) ? Math.max(1, Math.floor(cap)) : null,
       waitlistEnabled,
@@ -84,7 +100,8 @@ export default function CreateEventForm() {
     city,
     stateCode,
     category,
-    ticketTier,
+    isPremium,
+    priceDollars,
     capacity,
     waitlistEnabled,
     isRecurring,
@@ -100,7 +117,19 @@ export default function CreateEventForm() {
     if (Number.isNaN(s) || Number.isNaN(e)) return "Invalid Start/End time.";
     if (e <= s) return "End must be after Start.";
 
-    if (payload.capacity != null && payload.capacity < 1) return "Capacity must be >= 1.";
+    if (!payload.locationName?.trim()) return "Location name is required.";
+    if (!payload.address?.trim()) return "Address is required.";
+    if (!payload.city?.trim()) return "City is required.";
+    if (!payload.state?.trim() || payload.state.length !== 2) return "State is required (2 letters).";
+    if (!payload.category) return "Category is required.";
+
+    if (payload.capacity == null || payload.capacity < 1) return "Capacity is required and must be >= 1.";
+
+    if (payload.ticketTier === "PREMIUM") {
+      if (payload.priceCents == null) return "Ticket price is required.";
+      if (payload.priceCents <= 0) return "Ticket price must be >= 1.";
+    }
+
     if ((images?.length ?? 0) > 5) return "Max 5 gallery images.";
     if (payload.isRecurring && !payload.recurrence) return "Choose a recurrence frequency.";
     if (imagesUploading) return "Please wait for image uploads to finish.";
@@ -177,7 +206,7 @@ export default function CreateEventForm() {
           className={`${inputClass} min-h-[120px]`}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="Description"
+          placeholder="Description (optional)"
         />
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -212,12 +241,13 @@ export default function CreateEventForm() {
               value={locationName}
               onChange={(e) => setLocationName(e.target.value)}
               placeholder="e.g. FIU Library"
+              required
             />
           </label>
 
           <label className={labelClass}>
             Category
-            <select className={inputClass} value={category} onChange={(e) => setCategory(e.target.value)}>
+            <select className={inputClass} value={category} onChange={(e) => setCategory(e.target.value)} required>
               <option value="">—</option>
               {EVENT_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
@@ -227,29 +257,46 @@ export default function CreateEventForm() {
             </select>
           </label>
 
-          {/* ✅ NEW */}
-          <label className={labelClass}>
-            Pricing
-            <select
-              className={inputClass}
-              value={ticketTier}
-              onChange={(e) => setTicketTier(e.target.value as TicketTier)}
-            >
-              <option value="FREE">Free</option>
-              <option value="PREMIUM">Premium</option>
-            </select>
-          </label>
+          <div className={sectionClass}>
+            <label className="flex items-center justify-between gap-3 text-sm text-zinc-800">
+              <span className="font-semibold">Premium event</span>
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-zinc-900"
+                checked={isPremium}
+                onChange={(e) => setIsPremium(e.target.checked)}
+              />
+            </label>
+
+            {isPremium ? (
+              <label className={`${labelClass} mt-3 block`}>
+                Ticket price (USD, whole dollars)
+                <input
+                  className={inputClass}
+                  value={priceDollars}
+                  onChange={(e) => setPriceDollars(e.target.value.replace(/[^\d]/g, ""))}
+                  inputMode="numeric"
+                  placeholder="e.g. 25"
+                  required
+                />
+              </label>
+            ) : (
+              <div className="mt-3 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900">
+                Free (default)
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
           <label className={`${labelClass} md:col-span-1`}>
             Address
-            <input className={inputClass} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street address" />
+            <input className={inputClass} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street address" required />
           </label>
 
           <label className={labelClass}>
             City
-            <input className={inputClass} value={city} onChange={(e) => setCity(e.target.value)} placeholder="Miami" />
+            <input className={inputClass} value={city} onChange={(e) => setCity(e.target.value)} placeholder="Miami" required />
           </label>
 
           <label className={labelClass}>
@@ -260,6 +307,7 @@ export default function CreateEventForm() {
               onChange={(e) => setStateCode(e.target.value.toUpperCase())}
               placeholder="FL"
               maxLength={2}
+              required
             />
           </label>
         </div>
@@ -276,7 +324,7 @@ export default function CreateEventForm() {
                 if (!on) setRecurrence("WEEKLY");
               }}
             />
-            Recurring event
+            Recurring event (optional)
           </label>
 
           {isRecurring ? (
@@ -299,13 +347,14 @@ export default function CreateEventForm() {
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className={labelClass}>
-            Capacity (blank = unlimited)
+            Capacity
             <input
               className={inputClass}
               value={capacity}
-              onChange={(e) => setCapacity(e.target.value)}
+              onChange={(e) => setCapacity(e.target.value.replace(/[^\d]/g, ""))}
               inputMode="numeric"
               placeholder="e.g. 50"
+              required
             />
           </label>
 

@@ -35,6 +35,13 @@ enum RecurrenceFrequency {
   YEARLY
 }
 
+enum PaymentStatus {
+  PENDING
+  PAID
+  CANCELED
+  REFUNDED
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String?
@@ -45,6 +52,9 @@ model User {
   role           Role    @default(MEMBER)
   hashedPassword String?
 
+  // Stripe (customer for ticket purchases + subscriptions)
+  stripeCustomerId String? @unique
+
   events Event[] @relation("OrganizerEvents")
   rsvps  RSVP[]
 
@@ -54,6 +64,11 @@ model User {
   emailVerificationTokens EmailVerificationToken[]
   accounts                Account[]
   sessions                Session[]
+
+  // Payments / Cart / Subscription
+  orders     Order[]
+  cartItems  CartItem[]
+  subscription Subscription?
 }
 
 model Event {
@@ -71,8 +86,13 @@ model Event {
 
   category String?
   image    String?
-  images   String[] @default([]) // ✅ up to 5 stored here
+  images   String[] @default([]) // up to 5 stored here
+
   ticketTier TicketTier @default(FREE)
+
+  // ✅ NEW: Store money safely as cents (integer)
+  priceCents Int @default(0)
+  currency   String @default("usd")
 
   isRecurring  Boolean  @default(false)
   recurrence   RecurrenceFrequency?
@@ -90,11 +110,92 @@ model Event {
   savedBy SavedEvent[]
   rsvps   RSVP[]
 
+  // ✅ New relations
+  orderItems OrderItem[]
+  cartItems  CartItem[]
+
   @@index([startAt])
   @@index([locationName])
   @@index([organizerId, startAt])
   @@index([category])
   @@index([city, state])
+  @@index([ticketTier])
+  @@index([priceCents])
+}
+
+model Order {
+  id String @id @default(cuid())
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status      PaymentStatus @default(PENDING)
+  currency    String        @default("usd")
+  totalCents  Int
+
+  stripeCheckoutSessionId String? @unique
+  stripePaymentIntentId   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items OrderItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id String @id @default(cuid())
+
+  orderId String
+  order   Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  eventId String
+  event   Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  unitAmountCents Int
+  quantity        Int @default(1)
+
+  @@unique([orderId, eventId])
+  @@index([eventId])
+}
+
+model CartItem {
+  id String @id @default(cuid())
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  eventId String
+  event   Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  quantity Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, eventId])
+  @@index([userId])
+  @@index([eventId])
+}
+
+model Subscription {
+  id String @id @default(cuid())
+
+  userId String @unique
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  stripeSubscriptionId String @unique
+  stripePriceId        String?
+  status               String
+  currentPeriodEnd     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
 }
 
 model PasswordResetToken {
@@ -114,7 +215,6 @@ model RSVP {
   id     String     @id @default(cuid())
   status RSVPStatus @default(GOING)
 
-  // ✅ NEW: waitlist + check-in + reminders
   attendanceState   AttendanceState @default(CONFIRMED)
   checkInCode       String          @unique @default(cuid())
   checkedInAt       DateTime?
@@ -227,9 +327,9 @@ model EmailLog {
   kind      String
   to        String
 
-  status    String   @default("PENDING") // PENDING | SENT | FAILED
+  status     String   @default("PENDING") // PENDING | SENT | FAILED
   providerId String?
-  error     String?
+  error      String?
 
   meta      Json?
 

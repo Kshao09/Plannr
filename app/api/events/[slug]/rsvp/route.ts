@@ -80,21 +80,45 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
   // Rate limits
   const ip = getClientIp(req);
-  const rl1 = await enforceRateLimit({ limiter: limiters.rsvpIpMinute, key: ip, message: "Too many RSVP attempts" });
-  if (!rl1.ok) return rl1.response;
 
-  const rl2 = await enforceRateLimit({ limiter: limiters.rsvpUserMinute, key: user.id, message: "Too many RSVP attempts" });
-  if (!rl2.ok) return rl2.response;
+  const rl1 = await enforceRateLimit({
+    limiter: limiters.rsvpIpMinute,
+    key: ip,
+    message: "Too many RSVP attempts",
+  });
+  if (!rl1.ok) {
+    await finishIdempotency({
+      recordId,
+      statusCode: 429,
+      response: { error: "Too many RSVP attempts" },
+    });
+    return rl1.response;
+  }
+
+  const rl2 = await enforceRateLimit({
+    limiter: limiters.rsvpUserMinute,
+    key: user.id,
+    message: "Too many RSVP attempts",
+  });
+  if (!rl2.ok) {
+    await finishIdempotency({
+      recordId,
+      statusCode: 429,
+      response: { error: "Too many RSVP attempts" },
+    });
+    return rl2.response;
+  }
 
   const headers = mergeHeaders(rl1.headers, rl2.headers);
 
   try {
     const body = await req.json().catch(() => ({}));
     const nextStatus = normalizeStatus(body?.status);
+
     if (!nextStatus) {
-      const res = NextResponse.json({ error: "Invalid status" }, { status: 400, headers });
-      await finishIdempotency({ recordId, statusCode: 400, response: { error: "Invalid status" } });
-      return res;
+      const payload = { error: "Invalid status" };
+      await finishIdempotency({ recordId, statusCode: 400, response: payload });
+      return NextResponse.json(payload, { status: 400, headers });
     }
 
     const event = await prisma.event.findUnique({
@@ -112,9 +136,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     });
 
     if (!event) {
-      const res = NextResponse.json({ error: "Not found" }, { status: 404, headers });
-      await finishIdempotency({ recordId, statusCode: 404, response: { error: "Not found" } });
-      return res;
+      const payload = { error: "Not found" };
+      await finishIdempotency({ recordId, statusCode: 404, response: payload });
+      return NextResponse.json(payload, { status: 404, headers });
+    }
+
+    // Server-side guard: organizer cannot RSVP to own event
+    if (event.organizerId === user.id) {
+      const payload = { error: "Organizers cannot RSVP to their own event." };
+      await finishIdempotency({ recordId, statusCode: 403, response: payload });
+      return NextResponse.json(payload, { status: 403, headers });
+    }
+
+    // Optional: prevent GOING/MAYBE for events that already ended
+    if ((nextStatus === "GOING" || nextStatus === "MAYBE") && event.endAt.getTime() < Date.now()) {
+      const payload = { error: "This event has already ended." };
+      await finishIdempotency({ recordId, statusCode: 409, response: payload });
+      return NextResponse.json(payload, { status: 409, headers });
     }
 
     // Time-conflict check (for GOING/MAYBE)
@@ -135,15 +173,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         take: 1,
       });
 
-      if (others.length > 0 && overlaps(event.startAt, event.endAt, others[0].event.startAt, others[0].event.endAt)) {
-        const res = NextResponse.json(
-          { error: "Time conflict with another RSVP’d event." },
-          { status: 409, headers }
-        );
-        await finishIdempotency({ recordId, statusCode: 409, response: { error: "Time conflict" } });
-        return res;
+      if (
+        others.length > 0 &&
+        overlaps(event.startAt, event.endAt, others[0].event.startAt, others[0].event.endAt)
+      ) {
+        const payload = {
+          error: "Time conflict with another RSVP’d event.",
+          conflicts: [
+            {
+              title: others[0].event.title,
+              startAt: others[0].event.startAt,
+              endAt: others[0].event.endAt,
+            },
+          ],
+        };
+        await finishIdempotency({ recordId, statusCode: 409, response: payload });
+        return NextResponse.json(payload, { status: 409, headers });
       }
     }
+
+    // NOTE (next step): Premium gating goes here once your schema includes
+    // Event.isPremium / Event.priceCents + TicketPurchase status checks.
+    // We’ll add it after you send prisma/schema.prisma and purchase models.
 
     // Transaction: update RSVP, manage waitlist promotion
     const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -194,7 +245,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         },
       });
 
-      // If someone DECLINED (or moved away from GOING), try promote first waitlisted
+      // If someone freed a seat, promote first waitlisted
       let promoted: { userEmail: string; userName: string | null } | null = null;
 
       const freesSeat =
@@ -229,7 +280,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       dedupeKey: `email:rsvpUpdated:${result.upserted.id}:${result.upserted.status}:${result.upserted.attendanceState}`,
       kind: "rsvp_updated",
       to: user.email,
-      meta: { eventId: event.id, slug: event.slug, status: result.upserted.status, attendanceState: result.upserted.attendanceState },
+      meta: {
+        eventId: event.id,
+        slug: event.slug,
+        status: result.upserted.status,
+        attendanceState: result.upserted.attendanceState,
+      },
       send: (idempotencyKey) =>
         emailRsvpUpdated({
           to: user.email!,

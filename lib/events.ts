@@ -17,7 +17,11 @@ export type EventsQuery = {
   city?: string[] | string;
   category?: string[] | string;
 
-  tier?: string[] | string; // ✅ NEW
+  tier?: string[] | string;
+
+  // ✅ NEW: integer dollars range filters
+  minPrice?: string;
+  maxPrice?: string;
 
   organizerId?: string;
 };
@@ -43,6 +47,15 @@ function parseLocalDateEnd(ymd: string) {
 function toArray(v?: string[] | string) {
   if (!v) return [];
   return Array.isArray(v) ? v.filter(Boolean) : [v].filter(Boolean);
+}
+
+function dollarsToCents(s: string | undefined) {
+  if (!s) return null;
+  const n = Number(String(s).replace(/[^\d]/g, ""));
+  if (!Number.isFinite(n)) return null;
+  const int = Math.floor(n);
+  if (int < 0) return null;
+  return int * 100;
 }
 
 function computeDateWindow(input: Pick<EventsQuery, "range" | "from" | "to">) {
@@ -111,10 +124,19 @@ export async function getEvents(query: EventsQuery) {
     where.category = { in: Array.from(new Set(catValues)) };
   }
 
-  // ✅ NEW: tier filter
   const tiers = toArray(query.tier).map((x) => String(x).toUpperCase());
   if (tiers.length) {
     where.ticketTier = { in: Array.from(new Set(tiers)) };
+  }
+
+  // ✅ NEW: price range filter (stored as cents)
+  const minCents = dollarsToCents(query.minPrice);
+  const maxCents = dollarsToCents(query.maxPrice);
+
+  if (minCents != null || maxCents != null) {
+    where.priceCents = {};
+    if (minCents != null) where.priceCents.gte = minCents;
+    if (maxCents != null) where.priceCents.lte = maxCents;
   }
 
   if (query.organizerId) {
@@ -137,7 +159,9 @@ export async function getEvents(query: EventsQuery) {
         locationName: true,
         address: true,
         category: true,
-        ticketTier: true, // ✅ NEW
+        ticketTier: true,
+        priceCents: true, // ✅ NEW
+        currency: true,
         image: true,
         organizer: { select: { name: true } },
       } as any,
@@ -175,7 +199,7 @@ export async function getEventFilterOptions() {
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b));
 
-  const tiers: TicketTier[] = ["FREE", "PREMIUM"]; // ✅ static is fine
+  const tiers: TicketTier[] = ["FREE", "PREMIUM"];
 
   return { locations, categories, tiers };
 }

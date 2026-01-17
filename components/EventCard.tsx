@@ -16,7 +16,8 @@ export type EventLite = {
   locationName?: string | null;
   organizerName?: string | null;
   category?: string | null;
-  ticketTier?: TicketTier | null; // ✅ NEW
+  ticketTier?: TicketTier | null;
+  priceCents?: number | null; // ✅ NEW
   image?: string | null;
   isSaved?: boolean;
 };
@@ -62,10 +63,12 @@ function normalizeCoverImage(p?: string | null) {
   return v;
 }
 
-function tierLabel(t?: string | null) {
-  const up = String(t ?? "").toUpperCase();
-  if (up === "PREMIUM") return "Premium";
-  return "Free";
+function priceLabel(tier?: string | null, priceCents?: number | null) {
+  const up = String(tier ?? "FREE").toUpperCase();
+  if (up !== "PREMIUM") return "Free";
+  const cents = typeof priceCents === "number" && Number.isFinite(priceCents) ? priceCents : 0;
+  const dollars = Math.max(0, Math.floor(cents / 100));
+  return dollars > 0 ? `$${dollars}` : "Premium";
 }
 
 export default function EventCard({
@@ -135,7 +138,7 @@ export default function EventCard({
     await onToggleSave();
   }
 
-  const tier = tierLabel(e.ticketTier);
+  const label = priceLabel(e.ticketTier, e.priceCents);
 
   return (
     <div className="group overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm transition hover:shadow-md">
@@ -160,16 +163,15 @@ export default function EventCard({
             </div>
           ) : null}
 
-          {/* ✅ Free/Premium */}
           <div
             className={[
               "absolute right-3 top-12 rounded-full border px-2.5 py-1 text-xs font-semibold",
-              tier === "Premium"
+              label.startsWith("$")
                 ? "border-amber-200 bg-amber-50 text-amber-900"
                 : "border-emerald-200 bg-emerald-50 text-emerald-900",
             ].join(" ")}
           >
-            {tier}
+            {label}
           </div>
         </div>
 

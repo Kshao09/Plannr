@@ -53,11 +53,10 @@ export default function EventsFilters({
   function pushParams(mutator: (params: URLSearchParams) => void) {
     const params = new URLSearchParams(sp.toString());
 
-    // ✅ remove legacy mine param if it exists (no longer used)
     params.delete("mine");
-
     params.set("page", "1");
     mutator(params);
+
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);
   }
@@ -86,9 +85,16 @@ export default function EventsFilters({
     setParam("q", trimmed ? trimmed : null);
   }
 
+  function setPriceParam(key: "minPrice" | "maxPrice", raw: string) {
+    const v = raw.replace(/[^\d]/g, "");
+    pushParams((params) => {
+      if (!v) params.delete(key);
+      else params.set(key, v);
+    });
+  }
+
   return (
     <div className="mt-6">
-      {/* Search */}
       <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
         <div className="flex items-center gap-2">
           <input
@@ -123,10 +129,8 @@ export default function EventsFilters({
         </div>
       </div>
 
-      {/* Chips */}
       <div className="mt-4">
         <div className="flex flex-wrap items-center gap-4">
-          {/* ✅ Pricing tier chips */}
           {tiers?.length ? (
             <div className="flex flex-wrap items-center gap-2">
               <div className="mr-1 text-sm text-zinc-900">Pricing:</div>
@@ -145,24 +149,38 @@ export default function EventsFilters({
 
           <div className="hidden h-6 w-px bg-zinc-200 md:block" />
 
-          {/* Category chips */}
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-zinc-900">Price range ($):</span>
+            <input
+              inputMode="numeric"
+              defaultValue={sp.get("minPrice") ?? ""}
+              onChange={(e) => setPriceParam("minPrice", e.target.value)}
+              placeholder="min"
+              className="w-24 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-zinc-900"
+            />
+            <span className="text-zinc-700">to</span>
+            <input
+              inputMode="numeric"
+              defaultValue={sp.get("maxPrice") ?? ""}
+              onChange={(e) => setPriceParam("maxPrice", e.target.value)}
+              placeholder="max"
+              className="w-24 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-zinc-900"
+            />
+          </div>
+
+          <div className="hidden h-6 w-px bg-zinc-200 md:block" />
+
           {categories.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
               <div className="mr-1 text-sm text-zinc-900">Category:</div>
               {categories.map((c) => (
-                <Chip
-                  key={c}
-                  active={catSet.has(c)}
-                  label={c}
-                  onClick={() => toggleMulti("category", c)}
-                />
+                <Chip key={c} active={catSet.has(c)} label={c} onClick={() => toggleMulti("category", c)} />
               ))}
             </div>
           )}
 
           <div className="hidden h-6 w-px bg-zinc-200 md:block" />
 
-          {/* Custom date range */}
           <div className="flex items-center gap-2 text-sm">
             <span className="text-zinc-900">Custom dates:</span>
 

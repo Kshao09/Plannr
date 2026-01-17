@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ToastProvider";
 import { broadcastRsvpUpdate, getTabId, subscribeRsvpUpdates } from "@/lib/broadcast";
@@ -30,6 +30,11 @@ function fmt(d: Date) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(d);
+}
+
+function dollarsFromCents(priceCents: number) {
+  const cents = Number.isFinite(priceCents) ? priceCents : 0;
+  return Math.max(0, Math.floor(cents / 100));
 }
 
 function ConflictModal({
@@ -72,9 +77,7 @@ function ConflictModal({
 
         {conflicts?.length ? (
           <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Conflicts
-            </div>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Conflicts</div>
             <ul className="space-y-2">
               {conflicts.slice(0, 5).map((c) => {
                 const s = fmt(toDate(c.startAt));
@@ -145,11 +148,19 @@ export default function EventRSVP({
   initial,
   disabled,
   disabledReason,
+  ticketTier = "FREE",
+  priceCents = 0,
+  purchased = false,
 }: {
   slug: string;
   initial: { status: RSVPStatus; attendanceState: AttendanceState };
   disabled?: boolean;
   disabledReason?: string;
+
+  // ✅ NEW
+  ticketTier?: "FREE" | "PREMIUM";
+  priceCents?: number;
+  purchased?: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -175,6 +186,11 @@ export default function EventRSVP({
     return unsub;
   }, [slug, router]);
 
+  const requiresPayment = String(ticketTier).toUpperCase() === "PREMIUM";
+  const canRsvp = !requiresPayment || purchased;
+
+  const priceDollars = useMemo(() => dollarsFromCents(Number(priceCents ?? 0)), [priceCents]);
+
   function label(s: RSVPStatus) {
     return s ?? "Not set";
   }
@@ -182,6 +198,35 @@ export default function EventRSVP({
   function makeIdempotencyKey() {
     if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  async function startCheckout() {
+    try {
+      const res = await fetch("/api/checkout/event", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": makeIdempotencyKey(),
+        },
+        body: JSON.stringify({ slug }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.error ?? "Failed to start checkout.");
+        return;
+      }
+
+      const url = data?.url as string | undefined;
+      if (!url) {
+        toast.error("Missing checkout URL.");
+        return;
+      }
+
+      window.location.href = url;
+    } catch (e: any) {
+      toast.error(e?.message ?? "Network error.");
+    }
   }
 
   async function update(next: Exclude<RSVPStatus, null>) {
@@ -203,6 +248,17 @@ export default function EventRSVP({
         });
 
         const data = await res.json().catch(() => ({}));
+
+        // ✅ Premium enforcement: server returns 402 with checkoutUrl
+        if (res.status === 402) {
+          setStatus(prevStatus);
+          setAttendanceState(prevState);
+
+          const url = data?.checkoutUrl as string | undefined;
+          if (url) window.location.href = url;
+          else toast.error(data?.message ?? "Payment required.");
+          return;
+        }
 
         if (!res.ok) {
           setStatus(prevStatus);
@@ -284,10 +340,29 @@ export default function EventRSVP({
         </div>
       ) : null}
 
+      {requiresPayment && !purchased ? (
+        <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="font-semibold">Premium event</div>
+          <div className="mt-1">Ticket required: <span className="font-semibold">${priceDollars}</span></div>
+          <button
+            type="button"
+            onClick={startCheckout}
+            disabled={computedDisabled}
+            className="mt-3 w-full rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
+          >
+            Purchase ticket
+          </button>
+
+          <div className="mt-2 text-xs text-amber-900/80">
+            After payment, you’ll be able to RSVP and you’ll receive an email receipt.
+          </div>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          disabled={computedDisabled}
+          disabled={computedDisabled || !canRsvp}
           onClick={() => update("GOING")}
           className={[baseBtn, status === "GOING" ? activeBtn : ""].join(" ")}
         >
@@ -296,7 +371,7 @@ export default function EventRSVP({
 
         <button
           type="button"
-          disabled={computedDisabled}
+          disabled={computedDisabled || !canRsvp}
           onClick={() => update("MAYBE")}
           className={[baseBtn, status === "MAYBE" ? activeBtn : ""].join(" ")}
         >

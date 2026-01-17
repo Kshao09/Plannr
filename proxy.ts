@@ -14,7 +14,9 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith("/app/organizer/create") ||
     pathname.startsWith("/app/organizer") ||
     pathname.startsWith("/app/community") ||
-    pathname.startsWith("/app/saved");
+    pathname.startsWith("/app/saved") ||
+    pathname.startsWith("/app/cart") ||      // ✅ NEW
+    pathname.startsWith("/app/profile");     // ✅ NEW
 
   const token = await getToken({
     req,

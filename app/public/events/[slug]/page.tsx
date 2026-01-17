@@ -65,9 +65,12 @@ function buildImagesToShow(event: { image: string | null; images: unknown }) {
   return out;
 }
 
-function tierLabel(raw: any) {
-  const t = String(raw ?? "FREE").toUpperCase();
-  return t === "PREMIUM" ? "Premium" : "Free";
+function priceLabel(ticketTier: any, priceCents: any) {
+  const t = String(ticketTier ?? "FREE").toUpperCase();
+  if (t !== "PREMIUM") return "Free";
+  const cents = typeof priceCents === "number" ? priceCents : 0;
+  const dollars = Math.max(0, Math.floor(cents / 100));
+  return dollars > 0 ? `$${dollars}` : "Premium";
 }
 
 export default async function EventDetailPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -111,7 +114,9 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
       images: true,
       capacity: true,
       waitlistEnabled: true,
-      ticketTier: true, // ✅ NEW
+      ticketTier: true,
+      priceCents: true,   // ✅ NEW
+      currency: true,     // ✅ NEW
       checkInSecret: true,
     } as any,
   });
@@ -132,6 +137,14 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
     };
   }
 
+  // ✅ NEW: has user already paid for this premium event?
+  const purchased = userId
+    ? !!(await prisma.orderItem.findFirst({
+        where: { eventId: event.id, order: { userId, status: "PAID" } as any },
+        select: { id: true },
+      }))
+    : false;
+
   const addressLine = [event.address, event.city, event.state].map((x) => (x ?? "").trim()).filter(Boolean).join(", ");
   const locationForCalendar =
     (event.locationName?.trim() ? event.locationName : null) ?? (addressLine ? addressLine : null);
@@ -147,9 +160,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
   const imagesToShow = buildImagesToShow({ image: event.image, images: event.images });
 
   const base = await getBaseUrl();
-  const shareUrl = new URL(
-    `/app/organizer/events/${encodeURIComponent(event.slug)}/checkin`, base
-  ).toString();
+  const shareUrl = new URL(`/public/events/${encodeURIComponent(event.slug)}`, base).toString();
 
   const staffUrl = new URL(
     `/checkin/${encodeURIComponent(event.slug)}?secret=${encodeURIComponent(event.checkInSecret)}`,
@@ -161,8 +172,9 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
   const pill =
     "inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-sm font-medium text-zinc-900 shadow-sm";
 
+  const pricePillLabel = priceLabel((event as any).ticketTier, (event as any).priceCents);
   const tierPill =
-    tierLabel((event as any).ticketTier) === "Premium"
+    pricePillLabel.startsWith("$")
       ? "inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-900 shadow-sm"
       : "inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-900 shadow-sm";
 
@@ -194,7 +206,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
             <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
               {event.locationName ? <span className={pill}>{event.locationName}</span> : null}
 
-              <span className={tierPill}>{tierLabel((event as any).ticketTier)}</span>
+              <span className={tierPill}>{pricePillLabel}</span>
 
               {event.organizer?.name ? (
                 <span className="text-zinc-700">
@@ -269,7 +281,15 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
           <aside className="lg:col-span-4 space-y-6">
             <div className={card}>
               {userId ? (
-                <EventRSVP slug={event.slug} initial={initial} disabled={!!canManage} disabledReason={disabledReason} />
+                <EventRSVP
+                  slug={event.slug}
+                  initial={initial}
+                  disabled={!!canManage}
+                  disabledReason={disabledReason}
+                  ticketTier={(event as any).ticketTier ?? "FREE"}
+                  priceCents={(event as any).priceCents ?? 0}
+                  purchased={purchased}
+                />
               ) : (
                 <div className="text-sm text-zinc-900">
                   Log in to RSVP.{" "}
@@ -287,13 +307,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
               </div>
 
               <div className="rounded-3xl border border-zinc-200 bg-white p-3">
-                <QrImage
-                  text={shareUrl}
-                  openHref={shareUrl} // ✅ FIXED: was pointing to organizer checkin route
-                  openLabel="Open event ↗"
-                  openDisabled={false}
-                  showText={false}
-                />
+                <QrImage text={shareUrl} openHref={shareUrl} openLabel="Open event ↗" openDisabled={false} showText={false} />
               </div>
             </div>
 
@@ -312,7 +326,6 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
               </div>
             ) : null}
 
-            {/* ✅ Hide attendees for members */}
             {canManage ? (
               <div className={card}>
                 <EventAttendees eventId={event.id} slug={event.slug} canManage={!!canManage} />
