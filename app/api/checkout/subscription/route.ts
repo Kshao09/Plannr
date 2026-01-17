@@ -4,11 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { absoluteUrlFromRequest } from "@/lib/siteUrl";
-import {
-  beginIdempotency,
-  finishIdempotency,
-  stableIdempotencyKey,
-} from "@/lib/idempotency";
+import { beginIdempotency, finishIdempotency } from "@/lib/idempotency";
 
 export const runtime = "nodejs";
 
@@ -42,7 +38,7 @@ async function getOrCreateCustomer(userId: string, email: string | null, name: s
   const customer = await stripe.customers.create({
     email: email ?? undefined,
     name: name ?? undefined,
-    metadata: { userId }, // IMPORTANT: helps webhook map customer -> user
+    metadata: { userId }, // helps webhook map customer -> user
   });
 
   await prisma.user.update({ where: { id: userId }, data: { stripeCustomerId: customer.id } });
@@ -59,6 +55,8 @@ export async function POST(req: Request) {
   const route = `POST:/api/checkout/subscription`;
   const idem = await beginIdempotency({ req, route, userId: me.id, ttlSeconds: 60 * 10 });
   if (idem.kind === "replay" || idem.kind === "inflight") return idem.response;
+
+  // recordId exists when claimed; use it to make Stripe idempotency per-attempt
   const recordId = idem.kind === "claimed" ? idem.recordId : undefined;
 
   try {
@@ -77,11 +75,9 @@ export async function POST(req: Request) {
     const successUrl = absoluteUrlFromRequest(req, "/app/profile?sub=success");
     const cancelUrl = absoluteUrlFromRequest(req, "/app/profile?sub=cancel");
 
-    const stripeIdemKey = stableIdempotencyKey({
-      purpose: "subscription_checkout",
-      userId: me.id,
-      priceId,
-    });
+    // ✅ IMPORTANT: Stripe idempotency should be per-request-attempt
+    // This prevents duplicates on retries, but allows future upgrades after cancel, and works across localhost/vercel.
+    const stripeIdemKey = recordId ? `sub_checkout:${recordId}` : undefined;
 
     const checkout = await stripe.checkout.sessions.create(
       {
@@ -92,14 +88,12 @@ export async function POST(req: Request) {
         cancel_url: cancelUrl,
         allow_promotion_codes: true,
 
-        // ✅ webhook routing
         metadata: {
           type: "SUBSCRIPTION",
           userId: me.id,
           priceId,
         },
 
-        // ✅ ensures subscription events also carry userId
         subscription_data: {
           metadata: {
             userId: me.id,
@@ -107,7 +101,7 @@ export async function POST(req: Request) {
           },
         },
       },
-      { idempotencyKey: stripeIdemKey }
+      stripeIdemKey ? { idempotencyKey: stripeIdemKey } : undefined
     );
 
     const out = { ok: true, url: checkout.url };
