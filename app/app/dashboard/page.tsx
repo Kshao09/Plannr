@@ -279,6 +279,20 @@ export default async function DashboardPage() {
             )}
 
             <Link
+              href="/app/cart"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 shadow-sm hover:bg-zinc-50"
+            >
+              Cart
+            </Link>
+
+            <Link
+              href="/app/profile"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 shadow-sm hover:bg-zinc-50"
+            >
+              Profile
+            </Link>
+
+            <Link
               href="/app/saved"
               className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 shadow-sm hover:bg-zinc-50"
             >

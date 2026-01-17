@@ -3,8 +3,11 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import AvatarUploader from "./AvatarUploader";
+import SubscriptionPlans from "./SubscriptionPlans";
+import ProfileFlash from "./ProfileFlash";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 async function resolveUser(session: any): Promise<{ id: string; email: string | null } | null> {
   const su = session?.user ?? {};
@@ -12,6 +15,7 @@ async function resolveUser(session: any): Promise<{ id: string; email: string | 
   const email = (su as any)?.email as string | undefined;
   if (sessionId) return { id: sessionId, email: email ?? null };
   if (!email) return null;
+
   const db = await prisma.user.findUnique({ where: { email }, select: { id: true, email: true } });
   if (!db?.id) return null;
   return { id: db.id, email: db.email ?? null };
@@ -40,9 +44,14 @@ export default async function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-white text-zinc-900">
+      <ProfileFlash />
+
       <div className="mx-auto max-w-4xl px-4 py-10">
         <div className="mb-6 flex items-center gap-3">
-          <Link href="/app/dashboard" className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-200 bg-white hover:bg-zinc-50">
+          <Link
+            href="/app/dashboard"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-200 bg-white hover:bg-zinc-50"
+          >
             ←
           </Link>
           <h1 className="text-3xl font-semibold">Profile</h1>
@@ -69,32 +78,14 @@ export default async function ProfilePage() {
             <AvatarUploader />
           </div>
 
-          <div className="mt-8 rounded-2xl border border-zinc-200 bg-zinc-50 p-5">
-            <div className="text-sm font-semibold text-zinc-900">Subscription</div>
-            <div className="mt-2 text-sm text-zinc-700">
-              Status: <span className="font-semibold text-zinc-900">{user.subscription?.status ?? "none"}</span>
-            </div>
-            <div className="mt-3 grid gap-2 md:grid-cols-2">
-              <button
-                onClick={async () => {
-                  const res = await fetch("/api/checkout/subscription", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-                    body: JSON.stringify({ priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO || "" }),
-                  });
-                  const data = await res.json().catch(() => ({}));
-                  if (res.ok && data?.url) window.location.href = data.url;
-                }}
-                className="rounded-xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
-              >
-                Subscribe (Pro)
-              </button>
-
-              <div className="text-xs text-zinc-600">
-                Set <code>NEXT_PUBLIC_STRIPE_PRICE_PRO</code> to your Stripe Price ID.
-              </div>
-            </div>
-          </div>
+          <SubscriptionPlans
+            role={user.role}
+            status={user.subscription?.status ?? null}
+            currentPeriodEndISO={
+              user.subscription?.currentPeriodEnd ? user.subscription.currentPeriodEnd.toISOString() : null
+            }
+            proPriceId={process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? ""}
+          />
         </div>
       </div>
     </div>

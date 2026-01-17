@@ -4,7 +4,6 @@ import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ToastProvider";
 import { EVENT_CATEGORIES } from "@/lib/EventCategories";
-import EventImagesField from "@/components/EventImagesField";
 
 type RecurrenceFrequency = "WEEKLY" | "MONTHLY" | "YEARLY";
 type TicketTier = "FREE" | "PREMIUM";
@@ -23,355 +22,362 @@ function toISOFromDatetimeLocal(v: string) {
   return d.toISOString();
 }
 
+function clampInt(v: unknown, min: number, max: number) {
+  const n = typeof v === "number" ? v : Number(String(v ?? "").trim());
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
 type EditInitial = {
+  id: string;
+  slug: string;
+
   title: string;
-  description: string;
+  description: string | null;
+
   startAt: string; // ISO
   endAt: string; // ISO
-  locationName: string;
 
+  locationName: string;
   address: string;
   city: string;
   state: string;
 
   category: string;
-  ticketTier?: TicketTier | null; // ✅ NEW (optional so your server page won’t break until you add it)
-  capacity: number | null;
-  waitlistEnabled: boolean;
+
+  ticketTier: TicketTier;
+  priceCents: number;
+  currency: string;
 
   isRecurring: boolean;
   recurrence: RecurrenceFrequency | null;
-
-  image: string; // cover
-  images: string[]; // gallery
-
-  checkInSecret: string;
 };
 
-export default function EventEditForm({ slug, initial }: { slug: string; initial: EditInitial }) {
+export default function EventEditForm({ initial }: { initial: EditInitial }) {
   const router = useRouter();
   const toast = useToast();
 
-  const [saving, setSaving] = useState(false);
-  const [imagesUploading, setImagesUploading] = useState(false);
+  // --- Pricing (checkbox + optional price) ---
+  const initialPremium =
+    String(initial.ticketTier).toUpperCase() === "PREMIUM" &&
+    (initial.priceCents ?? 0) > 0;
 
-  const [title, setTitle] = useState(initial.title ?? "");
-  const [description, setDescription] = useState(initial.description ?? "");
-  const [startAt, setStartAt] = useState(toDatetimeLocalFromISO(initial.startAt));
-  const [endAt, setEndAt] = useState(toDatetimeLocalFromISO(initial.endAt));
-  const [locationName, setLocationName] = useState(initial.locationName ?? "");
+  const [isPremium, setIsPremium] = useState<boolean>(initialPremium);
 
-  const [address, setAddress] = useState(initial.address ?? "");
-  const [city, setCity] = useState(initial.city ?? "");
-  const [stateCode, setStateCode] = useState((initial.state ?? "").toUpperCase());
-
-  const [category, setCategory] = useState(initial.category ?? "");
-  const [ticketTier, setTicketTier] = useState<TicketTier>((initial.ticketTier ?? "FREE") as TicketTier); // ✅ NEW
-
-  const [capacity, setCapacity] = useState<string>(initial.capacity == null ? "" : String(initial.capacity));
-  const [waitlistEnabled, setWaitlistEnabled] = useState<boolean>(!!initial.waitlistEnabled);
-
-  const [isRecurring, setIsRecurring] = useState<boolean>(!!initial.isRecurring);
-  const [recurrence, setRecurrence] = useState<RecurrenceFrequency>(
-    (initial.recurrence as RecurrenceFrequency | null) ?? "WEEKLY"
+  // integer dollars in UI (stored as cents in DB)
+  const [priceDollars, setPriceDollars] = useState<number>(() =>
+    clampInt(Math.floor((initial.priceCents ?? 0) / 100), 0, 1_000_000)
   );
 
-  const [cover, setCover] = useState<string>(initial.image ?? "");
-  const [images, setImages] = useState<string[]>(Array.isArray(initial.images) ? initial.images : []);
+  const ticketTier: TicketTier = isPremium ? "PREMIUM" : "FREE";
 
-  const inputClass =
-    "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-zinc-300 focus:ring-2 focus:ring-zinc-100";
-  const labelClass = "text-sm font-medium text-zinc-700";
-  const sectionClass = "rounded-2xl border border-zinc-200 bg-zinc-50 p-4";
+  const computedPriceCents = useMemo(() => {
+    if (!isPremium) return 0;
+    const dollars = clampInt(priceDollars, 1, 1_000_000);
+    return dollars * 100;
+  }, [isPremium, priceDollars]);
 
-  const payload = useMemo(() => {
-    const cap = capacity.trim() ? Number(capacity) : null;
+  const [busy, setBusy] = useState(false);
 
-    const normalizedState = stateCode.trim().toUpperCase();
-    const safeState = normalizedState ? normalizedState.slice(0, 2) : null;
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (busy) return;
 
-    return {
-      title: title.trim(),
-      description: description.trim() || null,
-      startAt: startAt ? toISOFromDatetimeLocal(startAt) : null,
-      endAt: endAt ? toISOFromDatetimeLocal(endAt) : null,
-      locationName: locationName.trim() || null,
+    const form = e.currentTarget;
+    const fd = new FormData(form);
 
-      address: address.trim() || null,
-      city: city.trim() || null,
-      state: safeState,
+    // Enforce required fields (except description + recurring checkbox)
+    const title = String(fd.get("title") ?? "").trim();
+    const locationName = String(fd.get("locationName") ?? "").trim();
+    const category = String(fd.get("category") ?? "").trim();
+    const address = String(fd.get("address") ?? "").trim();
+    const city = String(fd.get("city") ?? "").trim();
+    const state = String(fd.get("state") ?? "").trim();
 
-      category: category || null,
-      ticketTier, // ✅ NEW
+    const startLocal = String(fd.get("startLocal") ?? "").trim();
+    const endLocal = String(fd.get("endLocal") ?? "").trim();
 
-      capacity: cap != null && Number.isFinite(cap) ? Math.max(1, Math.floor(cap)) : null,
-      waitlistEnabled,
+    if (
+      !title ||
+      !locationName ||
+      !category ||
+      !address ||
+      !city ||
+      !state ||
+      !startLocal ||
+      !endLocal
+    ) {
+      toast.error(
+        "Please fill all required fields (description is optional).",
+        "Missing required fields"
+      );
+      return;
+    }
+
+    if (isPremium && computedPriceCents <= 0) {
+      toast.error("Premium events must have a price of at least $1.", "Invalid price");
+      return;
+    }
+
+    const isRecurring = fd.get("isRecurring") === "on";
+    const recurrence = isRecurring
+      ? (String(fd.get("recurrence") ?? "").toUpperCase() as RecurrenceFrequency)
+      : null;
+
+    // payload — keep backend fields stable
+    const payload = {
+      title,
+      description: String(fd.get("description") ?? "").trim() || null,
+
+      startAt: toISOFromDatetimeLocal(startLocal),
+      endAt: toISOFromDatetimeLocal(endLocal),
+
+      locationName,
+      category,
+
+      address,
+      city,
+      state,
+
+      ticketTier,
+      priceCents: computedPriceCents,
+      currency: "usd",
 
       isRecurring,
-      recurrence: isRecurring ? recurrence : null,
-
-      image: cover || null,
-      images,
+      recurrence,
     };
-  }, [
-    title,
-    description,
-    startAt,
-    endAt,
-    locationName,
-    address,
-    city,
-    stateCode,
-    category,
-    ticketTier,
-    capacity,
-    waitlistEnabled,
-    isRecurring,
-    recurrence,
-    cover,
-    images,
-  ]);
 
-  function validate() {
-    if (!payload.title) return "Title is required.";
-    if (!startAt || !endAt) return "Start and End are required.";
+    // Basic date sanity
+    const startMs = new Date(payload.startAt).getTime();
+    const endMs = new Date(payload.endAt).getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+      toast.error("End must be after start.", "Invalid date range");
+      return;
+    }
 
-    const s = new Date(payload.startAt as string).getTime();
-    const e = new Date(payload.endAt as string).getTime();
-    if (Number.isNaN(s) || Number.isNaN(e)) return "Invalid Start/End time.";
-    if (e <= s) return "End must be after Start.";
-
-    if ((payload.images?.length ?? 0) > 5) return "Max 5 gallery images.";
-    if (payload.isRecurring && !payload.recurrence) return "Choose a recurrence frequency.";
-    if (imagesUploading) return "Please wait for image uploads to finish.";
-
-    return null;
-  }
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-
-    const v = validate();
-    if (v) return toast.error(v, "Save failed");
-
-    setSaving(true);
+    setBusy(true);
     try {
-      const res = await fetch(`/api/events/${encodeURIComponent(slug)}`, {
+      // Adjust method/route here if your backend differs.
+      const res = await fetch(`/api/events/${encodeURIComponent(initial.slug)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
         body: JSON.stringify(payload),
       });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data?.error ?? "Failed to save event.", "Save failed");
+        toast.error(data?.error ?? "Could not update event.", "Update failed");
         return;
       }
 
-      toast.success("Changes saved!");
-      router.push(`/public/events/${slug}`);
+      toast.success("Saved successfully.", "Event updated");
       router.refresh();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Network error.";
-      toast.error(msg, "Save failed");
+      router.push(`/public/events/${encodeURIComponent(initial.slug)}`);
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-[0_18px_60px_rgba(0,0,0,0.08)]"
-    >
-      <div className="grid gap-4">
+    <form onSubmit={onSubmit} className="space-y-6">
+      {/* Title */}
+      <div>
+        <label className="mb-2 block text-sm font-semibold">Title *</label>
         <input
-          className={inputClass}
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Title"
+          name="title"
+          defaultValue={initial.title}
           required
+          className="w-full rounded-2xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
         />
+      </div>
 
+      {/* Description (optional) */}
+      <div>
+        <label className="mb-2 block text-sm font-semibold">Description</label>
         <textarea
-          className={`${inputClass} min-h-[120px]`}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Description"
+          name="description"
+          defaultValue={initial.description ?? ""}
+          rows={5}
+          className="w-full rounded-2xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
         />
+      </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className={labelClass}>
-            Start
-            <input
-              type="datetime-local"
-              className={inputClass}
-              value={startAt}
-              onChange={(e) => setStartAt(e.target.value)}
-              required
-            />
-          </label>
+      {/* Dates */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <div>
+          <label className="mb-2 block text-sm font-semibold">Start *</label>
+          <input
+            type="datetime-local"
+            name="startLocal"
+            required
+            defaultValue={toDatetimeLocalFromISO(initial.startAt)}
+            className="w-full rounded-2xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
+          />
+        </div>
+        <div>
+          <label className="mb-2 block text-sm font-semibold">End *</label>
+          <input
+            type="datetime-local"
+            name="endLocal"
+            required
+            defaultValue={toDatetimeLocalFromISO(initial.endAt)}
+            className="w-full rounded-2xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
+          />
+        </div>
+      </div>
 
-          <label className={labelClass}>
-            End
-            <input
-              type="datetime-local"
-              className={inputClass}
-              value={endAt}
-              onChange={(e) => setEndAt(e.target.value)}
-              required
-            />
-          </label>
+      {/* Location + Category + Pricing */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <div>
+          <label className="mb-2 block text-sm font-semibold">Location name *</label>
+          <input
+            name="locationName"
+            defaultValue={initial.locationName}
+            required
+            className="w-full rounded-2xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
+          />
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          <label className={labelClass}>
-            Location name
-            <input
-              className={inputClass}
-              value={locationName}
-              onChange={(e) => setLocationName(e.target.value)}
-              placeholder="e.g. FIU Library"
-            />
-          </label>
-
-          <label className={labelClass}>
-            Category
-            <select className={inputClass} value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option value="">—</option>
-              {EVENT_CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {/* ✅ NEW */}
-          <label className={labelClass}>
-            Pricing
-            <select
-              className={inputClass}
-              value={ticketTier}
-              onChange={(e) => setTicketTier(e.target.value as TicketTier)}
-            >
-              <option value="FREE">Free</option>
-              <option value="PREMIUM">Premium</option>
-            </select>
-          </label>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-3">
-          <label className={`${labelClass} md:col-span-1`}>
-            Address
-            <input
-              className={inputClass}
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="Street address"
-            />
-          </label>
-
-          <label className={labelClass}>
-            City
-            <input className={inputClass} value={city} onChange={(e) => setCity(e.target.value)} placeholder="Miami" />
-          </label>
-
-          <label className={labelClass}>
-            State
-            <input
-              className={inputClass}
-              value={stateCode}
-              onChange={(e) => setStateCode(e.target.value.toUpperCase())}
-              placeholder="FL"
-              maxLength={2}
-            />
-          </label>
-        </div>
-
-        <div className={sectionClass}>
-          <label className="flex items-center gap-3 text-sm text-zinc-800">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-zinc-900"
-              checked={isRecurring}
-              onChange={(e) => {
-                const on = e.target.checked;
-                setIsRecurring(on);
-                if (!on) setRecurrence("WEEKLY");
-              }}
-            />
-            Recurring event
-          </label>
-
-          {isRecurring ? (
-            <div className="mt-3">
-              <label className={labelClass}>
-                Repeats
-                <select
-                  className={inputClass}
-                  value={recurrence}
-                  onChange={(e) => setRecurrence(e.target.value as RecurrenceFrequency)}
-                >
-                  <option value="WEEKLY">Every week</option>
-                  <option value="MONTHLY">Every month</option>
-                  <option value="YEARLY">Every year</option>
-                </select>
-              </label>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className={labelClass}>
-            Capacity (blank = unlimited)
-            <input
-              className={inputClass}
-              value={capacity}
-              onChange={(e) => setCapacity(e.target.value)}
-              inputMode="numeric"
-              placeholder="e.g. 50"
-            />
-          </label>
-
-          <label className="mt-6 flex items-center gap-3 text-sm text-zinc-800">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-zinc-900"
-              checked={waitlistEnabled}
-              onChange={(e) => setWaitlistEnabled(e.target.checked)}
-            />
-            Enable waitlist when full
-          </label>
-        </div>
-
-        <EventImagesField
-          cover={cover}
-          images={images}
-          onUploadingChange={setImagesUploading}
-          onChange={({ cover, images }) => {
-            setCover(cover);
-            setImages(images);
-          }}
-        />
-
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button
-            type="submit"
-            disabled={saving || imagesUploading}
-            className="rounded-xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
+        <div>
+          <label className="mb-2 block text-sm font-semibold">Category *</label>
+          <select
+            name="category"
+            defaultValue={initial.category}
+            required
+            className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none focus:border-zinc-400"
           >
-            {saving ? "Saving…" : imagesUploading ? "Uploading images…" : "Save changes"}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-          >
-            Cancel
-          </button>
+            {EVENT_CATEGORIES.map((c: string) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
         </div>
+
+        {/* ✅ Pricing (Checkbox + conditional price field) */}
+        <div>
+          <label className="mb-2 block text-sm font-semibold">Pricing *</label>
+
+          <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3">
+            <label className="flex cursor-pointer items-center gap-3">
+              <input
+                type="checkbox"
+                checked={isPremium}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  setIsPremium(next);
+                  if (!next) setPriceDollars(0);
+                  if (next && priceDollars <= 0) setPriceDollars(10); // sensible default
+                }}
+                className="h-5 w-5 rounded border-zinc-300"
+              />
+              <span className="text-sm font-semibold">Premium (paid tickets)</span>
+            </label>
+
+            {isPremium ? (
+              <div className="mt-3">
+                <div className="text-xs font-semibold text-zinc-700">Ticket price (USD) *</div>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-sm text-zinc-700">$</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    step={1}
+                    value={priceDollars}
+                    onChange={(e) => setPriceDollars(clampInt(e.target.value, 0, 1_000_000))}
+                    className="w-full rounded-xl border border-zinc-200 px-3 py-2 outline-none focus:border-zinc-400"
+                    required
+                  />
+                </div>
+                <div className="mt-2 text-xs text-zinc-600">
+                  Attendees must purchase before RSVP becomes GOING.
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 text-xs font-semibold text-emerald-700">Free</div>
+            )}
+
+            {/* ✅ keep backend compatibility */}
+            <input type="hidden" name="ticketTier" value={ticketTier} />
+            <input type="hidden" name="priceCents" value={String(computedPriceCents)} />
+            <input type="hidden" name="currency" value="usd" />
+          </div>
+        </div>
+      </div>
+
+      {/* Address */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <div>
+          <label className="mb-2 block text-sm font-semibold">Address *</label>
+          <input
+            name="address"
+            defaultValue={initial.address}
+            required
+            className="w-full rounded-2xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
+          />
+        </div>
+        <div>
+          <label className="mb-2 block text-sm font-semibold">City *</label>
+          <input
+            name="city"
+            defaultValue={initial.city}
+            required
+            className="w-full rounded-2xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
+          />
+        </div>
+        <div>
+          <label className="mb-2 block text-sm font-semibold">State *</label>
+          <input
+            name="state"
+            defaultValue={initial.state}
+            required
+            className="w-full rounded-2xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
+          />
+        </div>
+      </div>
+
+      {/* Recurring */}
+      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+        <label className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            name="isRecurring"
+            defaultChecked={!!initial.isRecurring}
+            className="h-5 w-5 rounded border-zinc-300"
+          />
+          <span className="text-sm font-semibold">Recurring event</span>
+        </label>
+
+        <div className="mt-3">
+          <label className="mb-2 block text-xs font-semibold text-zinc-700">Frequency</label>
+          <select
+            name="recurrence"
+            defaultValue={initial.recurrence ?? "WEEKLY"}
+            className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none focus:border-zinc-400"
+          >
+            <option value="WEEKLY">Weekly</option>
+            <option value="MONTHLY">Monthly</option>
+            <option value="YEARLY">Yearly</option>
+          </select>
+          <div className="mt-2 text-xs text-zinc-600">
+            If “Recurring event” is unchecked, the frequency is ignored.
+          </div>
+        </div>
+      </div>
+
+      {/* Submit */}
+      <div className="flex items-center justify-end gap-3">
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-2xl bg-zinc-900 px-5 py-3 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
+        >
+          {busy ? "Saving..." : "Save changes"}
+        </button>
       </div>
     </form>
   );
