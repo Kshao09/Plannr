@@ -49,8 +49,15 @@ type EditInitial = {
   priceCents: number;
   currency: string;
 
+  capacity: number | null;
+  waitlistEnabled: boolean;
+
   isRecurring: boolean;
   recurrence: RecurrenceFrequency | null;
+
+  image: string;
+  images: string[];
+  checkInSecret: string | null;
 };
 
 export default function EventEditForm({ initial }: { initial: EditInitial }) {
@@ -119,10 +126,18 @@ export default function EventEditForm({ initial }: { initial: EditInitial }) {
       return;
     }
 
+    // Capacity + waitlist
+    const capRaw = String(fd.get("capacity") ?? "").trim();
+    const capacity = capRaw === "" ? null : clampInt(capRaw, 1, 1_000_000);
+
+    const waitlistEnabled = fd.get("waitlistEnabled") === "on";
+
     const isRecurring = fd.get("isRecurring") === "on";
     const recurrence = isRecurring
       ? (String(fd.get("recurrence") ?? "").toUpperCase() as RecurrenceFrequency)
       : null;
+
+    const currency = String(fd.get("currency") ?? initial.currency ?? "usd").toLowerCase();
 
     // payload — keep backend fields stable
     const payload = {
@@ -141,7 +156,10 @@ export default function EventEditForm({ initial }: { initial: EditInitial }) {
 
       ticketTier,
       priceCents: computedPriceCents,
-      currency: "usd",
+      currency,
+
+      capacity,
+      waitlistEnabled,
 
       isRecurring,
       recurrence,
@@ -155,14 +173,19 @@ export default function EventEditForm({ initial }: { initial: EditInitial }) {
       return;
     }
 
+    // Optional sanity: if capacity is null, waitlist doesn't really apply
+    // (leave as-is if you want; uncomment if you prefer forcing it off)
+    // if (payload.capacity === null) payload.waitlistEnabled = false;
+
     setBusy(true);
     try {
-      // Adjust method/route here if your backend differs.
       const res = await fetch(`/api/events/${encodeURIComponent(initial.slug)}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          "Idempotency-Key": crypto.randomUUID(),
+          "Idempotency-Key": globalThis.crypto?.randomUUID
+            ? globalThis.crypto.randomUUID()
+            : String(Date.now()),
         },
         body: JSON.stringify(payload),
       });
@@ -257,7 +280,7 @@ export default function EventEditForm({ initial }: { initial: EditInitial }) {
           </select>
         </div>
 
-        {/* ✅ Pricing (Checkbox + conditional price field) */}
+        {/* Pricing */}
         <div>
           <label className="mb-2 block text-sm font-semibold">Pricing *</label>
 
@@ -270,7 +293,7 @@ export default function EventEditForm({ initial }: { initial: EditInitial }) {
                   const next = e.target.checked;
                   setIsPremium(next);
                   if (!next) setPriceDollars(0);
-                  if (next && priceDollars <= 0) setPriceDollars(10); // sensible default
+                  if (next && priceDollars <= 0) setPriceDollars(10);
                 }}
                 className="h-5 w-5 rounded border-zinc-300"
               />
@@ -301,11 +324,40 @@ export default function EventEditForm({ initial }: { initial: EditInitial }) {
               <div className="mt-3 text-xs font-semibold text-emerald-700">Free</div>
             )}
 
-            {/* ✅ keep backend compatibility */}
+            {/* Keep backend compatibility */}
             <input type="hidden" name="ticketTier" value={ticketTier} />
             <input type="hidden" name="priceCents" value={String(computedPriceCents)} />
-            <input type="hidden" name="currency" value="usd" />
+            <input type="hidden" name="currency" value={initial.currency ?? "usd"} />
           </div>
+        </div>
+      </div>
+
+      {/* Capacity + Waitlist */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <div>
+          <label className="mb-2 block text-sm font-semibold">Capacity</label>
+          <input
+            name="capacity"
+            type="number"
+            min={1}
+            step={1}
+            defaultValue={initial.capacity ?? ""}
+            className="w-full rounded-2xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
+            placeholder="Leave blank for unlimited"
+          />
+          <div className="mt-2 text-xs text-zinc-600">Blank means no limit.</div>
+        </div>
+
+        <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+          <label className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              name="waitlistEnabled"
+              defaultChecked={!!initial.waitlistEnabled}
+              className="h-5 w-5 rounded border-zinc-300"
+            />
+            <span className="text-sm font-semibold">Enable waitlist when full</span>
+          </label>
         </div>
       </div>
 
@@ -353,7 +405,9 @@ export default function EventEditForm({ initial }: { initial: EditInitial }) {
         </label>
 
         <div className="mt-3">
-          <label className="mb-2 block text-xs font-semibold text-zinc-700">Frequency</label>
+          <label className="mb-2 block text-xs font-semibold text-zinc-700">
+            Frequency
+          </label>
           <select
             name="recurrence"
             defaultValue={initial.recurrence ?? "WEEKLY"}

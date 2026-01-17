@@ -7,7 +7,9 @@ export const dynamic = "force-dynamic";
 
 type TicketTier = "FREE" | "PREMIUM";
 
-async function resolveMe(session: any): Promise<{ id: string; role: string } | null> {
+async function resolveMe(
+  session: any
+): Promise<{ id: string; role: string } | null> {
   const su = session?.user ?? {};
   const sessionId = (su as any)?.id as string | undefined;
   const sessionRole = (su as any)?.role as string | undefined;
@@ -45,6 +47,7 @@ export default async function EditEventPage({
   const event = await prisma.event.findFirst({
     where: { slug },
     select: {
+      id: true,
       slug: true,
       organizerId: true,
 
@@ -59,7 +62,11 @@ export default async function EditEventPage({
       state: true,
 
       category: true,
-      ticketTier: true, // ✅ NEW
+
+      ticketTier: true,
+      priceCents: true,
+      currency: true,
+
       capacity: true,
       waitlistEnabled: true,
 
@@ -70,18 +77,20 @@ export default async function EditEventPage({
       images: true,
 
       checkInSecret: true,
-    } as any,
+    },
   });
 
   if (!event) return notFound();
   if (event.organizerId !== me.id) redirect("/public/events");
 
   const safeImages = Array.isArray(event.images)
-    ? (event.images as any[]).map((x) => String(x ?? "").trim()).filter(Boolean)
-    : [];
+  ? (event.images as unknown[]).map((x: unknown) => String(x ?? "").trim()).filter(Boolean)
+  : [];
 
   const ticketTier: TicketTier =
-    ((event as any).ticketTier ?? "FREE") === "PREMIUM" ? "PREMIUM" : "FREE";
+    String(event.ticketTier ?? "FREE").toUpperCase() === "PREMIUM"
+      ? "PREMIUM"
+      : "FREE";
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10">
@@ -95,20 +104,26 @@ export default async function EditEventPage({
       </div>
 
       <EventEditForm
-        slug={slug}
         initial={{
+          id: event.id,
+          slug: event.slug,
+
           title: event.title ?? "",
-          description: event.description ?? "",
+          description: event.description ?? null,
+
           startAt: event.startAt ? event.startAt.toISOString() : "",
           endAt: event.endAt ? event.endAt.toISOString() : "",
-          locationName: event.locationName ?? "",
 
+          locationName: event.locationName ?? "",
           address: event.address ?? "",
           city: event.city ?? "",
           state: event.state ?? "",
 
           category: event.category ?? "",
-          ticketTier, // ✅ NEW
+
+          ticketTier,
+          priceCents: event.priceCents ?? 0,
+          currency: event.currency ?? "usd",
 
           capacity: event.capacity ?? null,
           waitlistEnabled: !!event.waitlistEnabled,
@@ -118,7 +133,7 @@ export default async function EditEventPage({
 
           image: event.image ?? "",
           images: safeImages,
-          checkInSecret: event.checkInSecret ?? "",
+          checkInSecret: event.checkInSecret ?? null,
         }}
       />
     </div>
